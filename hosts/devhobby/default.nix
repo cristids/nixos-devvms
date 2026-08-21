@@ -10,7 +10,7 @@
     type = "macvtap";
     id = "vm-devhobby";
     # Locally-administered MAC, mnemonic "cds s03 dev 02". Router DHCP reservation
-    # pins it to 192.168.40.109.
+    # pins it to 192.168.40.27.
     mac = "02:cd:53:03:de:02";
     macvtap = {
       link = "enp0s31f6";

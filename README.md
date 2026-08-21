@@ -7,7 +7,7 @@ microvm.nix. Same layout as [nixos-laptops](https://github.com/cristids/nixos-la
 | VM | IP | Purpose |
 |----|-----|---------|
 | devpro | 192.168.40.26 | professional work (scoped work creds, driven with care) |
-| devhobby | 192.168.40.109 | hobby projects / agent playground |
+| devhobby | 192.168.40.27 | hobby projects / agent playground |
 
 ## How these deploy
 
