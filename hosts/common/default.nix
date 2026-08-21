@@ -16,6 +16,7 @@
 {
   imports = [
     ../../modules/emacs.nix
+    ../../modules/emacs-mini.nix
     ../../modules/dev-tooling.nix
     ../../modules/agents.nix
   ];
