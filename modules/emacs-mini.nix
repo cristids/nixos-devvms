@@ -22,7 +22,6 @@ let
       DISTROS_DIR="$HOME/.local/share/emacs-distros"
       FRAMEWORK_DIR="$DISTROS_DIR/mini"
       REPO_DIR="$HOME/cristids/mini"
-      REPO_SLUG="cristids/mini"
 
       log() { printf '[mini-sync] %s\n' "$*"; }
 
@@ -48,26 +47,38 @@ let
         log "backed up stray ~/.emacs.d"
       fi
 
-      # 3. Personal overlay (private) — needs gh auth; quietly skip until then.
+      # 3. Personal repos (private) — need gh auth; quietly skip until then.
       if ! gh auth token >/dev/null 2>&1; then
         log "gh not authenticated — framework only; run 'gh auth login', then mini-sync"
         exit 0
       fi
       gh auth setup-git >/dev/null 2>&1 || true
+      # post-init.el installs natural-mode/studio/socrates via package-vc from
+      # git@github.com: URLs. The VMs carry no GitHub SSH key on purpose
+      # (laptops ssh in, nothing sshes out), so rewrite ssh→https and let gh's
+      # credential helper answer instead.
+      git config --global url."https://github.com/".insteadOf "git@github.com:"
 
-      if [ ! -d "$REPO_DIR/.git" ]; then
-        log "cloning $REPO_SLUG → $REPO_DIR"
-        mkdir -p "$(dirname "$REPO_DIR")"
-        gh repo clone "$REPO_SLUG" "$REPO_DIR" -- --depth 50 \
-          || { log "gh clone failed; skipping"; exit 0; }
-      fi
+      # Clone/refresh a private cristids repo into ~/cristids/<name>.
+      sync_repo() {
+        dir="$HOME/cristids/$1"
+        if [ ! -d "$dir/.git" ]; then
+          log "cloning cristids/$1 → $dir"
+          mkdir -p "$HOME/cristids"
+          gh repo clone "cristids/$1" "$dir" -- --depth 50 \
+            || { log "clone of $1 failed; skipping"; return 1; }
+        fi
+        if ! git -C "$dir" diff --quiet || ! git -C "$dir" diff --cached --quiet; then
+          log "local changes present in $dir; skipping pull"
+        else
+          git -C "$dir" pull --ff-only --quiet 2>/dev/null || true
+        fi
+      }
 
-      cd "$REPO_DIR"
-      if ! git diff --quiet || ! git diff --cached --quiet; then
-        log "local changes present in $REPO_DIR; skipping pull"
-      else
-        git pull --ff-only --quiet 2>/dev/null || true
-      fi
+      # natural-mode: post-init.el only defines the menu groups (AI, Notes —
+      # the tap-Alt / M-n surface) when ~/cristids/natural-mode exists.
+      sync_repo natural-mode || true
+      sync_repo mini || exit 0
 
       # 4. Symlink personal files over the framework (it gitignores post-init.el etc.)
       for src in "$REPO_DIR"/* "$REPO_DIR"/.[!.]*; do
