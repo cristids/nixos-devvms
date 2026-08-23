@@ -18,9 +18,10 @@
 # service (or reboot) to re-render after a key rotation.
 let
   pi = pkgs.callPackage ../pkgs/pi-coding-agent { };
+  openspec = pkgs.callPackage ../pkgs/openspec { };
 in
 {
-  environment.systemPackages = [ pi ];
+  environment.systemPackages = [ pi openspec ];
 
   systemd.services.pi-models-seed = {
     description = "Seed pi models.json from /var/lib/melious.key";

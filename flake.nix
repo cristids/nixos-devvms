@@ -36,12 +36,14 @@
         devhobby = mkVM "devhobby";
       };
 
-      # Exposed for hash-bump iteration: `nix build .#pi-coding-agent`.
+      # Exposed for hash-bump iteration: `nix build .#pi-coding-agent` etc.
       # (oh-my-pi is NOT nix-packaged: it is a pi extension installed per-user by
       # pi's own package manager — see modules/agents.nix.)
       packages.${system} = {
         pi-coding-agent =
           nixpkgs.legacyPackages.${system}.callPackage ./pkgs/pi-coding-agent { };
+        openspec =
+          nixpkgs.legacyPackages.${system}.callPackage ./pkgs/openspec { };
       };
     };
 }
