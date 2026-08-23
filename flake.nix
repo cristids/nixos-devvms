@@ -15,13 +15,19 @@
       url = "github:microvm-nix/microvm.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # omp (can1357/oh-my-pi) — THE oh-my-pi, Can Bölük's fork of pi. Deliberately NO
+    # nixpkgs follows: its build (rust-overlay + bun2nix) is pinned to its own inputs
+    # and forcing our 25.11 under it would just break the from-source build.
+    omp.url = "github:can1357/oh-my-pi";
   };
 
-  outputs = { self, nixpkgs, microvm }:
+  outputs = { self, nixpkgs, microvm, omp }:
     let
       system = "x86_64-linux";
       mkVM = host: nixpkgs.lib.nixosSystem {
         inherit system;
+        specialArgs = { ompPkg = omp.packages.${system}.default; };
         modules = [
           # Guests deliberately run the stock nixpkgs kernel (no cachyos overlay) so
           # their whole closure substitutes from cache.nixos.org instead of rebuilding.
@@ -36,12 +42,8 @@
         devhobby = mkVM "devhobby";
       };
 
-      # Exposed for hash-bump iteration: `nix build .#pi-coding-agent` etc.
-      # (oh-my-pi is NOT nix-packaged: it is a pi extension installed per-user by
-      # pi's own package manager — see modules/agents.nix.)
+      # Exposed for hash-bump iteration: `nix build .#openspec`.
       packages.${system} = {
-        pi-coding-agent =
-          nixpkgs.legacyPackages.${system}.callPackage ./pkgs/pi-coding-agent { };
         openspec =
           nixpkgs.legacyPackages.${system}.callPackage ./pkgs/openspec { };
       };
