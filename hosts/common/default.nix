@@ -145,12 +145,31 @@
     vim
     htop
     btop
-    tmux
     curl
     wget
     jq
     rsync
     ripgrep
     fd
+
+    # The laptops ssh in from Alacritty (TERM=alacritty; Ghostty also around).
+    # Without these terminfo entries the session falls back to an 8-color TERM
+    # and emacs quantizes theme hexes to ANSI (doom-ayu's navy bg rendered as
+    # solid bright blue). Terminfo-only outputs — not the whole terminals.
+    alacritty.terminfo
+    ghostty.terminfo
   ];
+
+  # tmux with colors done right — a bare `tmux` package defaults to
+  # TERM=screen inside sessions (8 colors, same blue-emacs failure as above,
+  # even with the terminfo fix outside tmux).
+  programs.tmux = {
+    enable = true;
+    terminal = "tmux-256color";
+    extraConfig = ''
+      # Truecolor passthrough for the terminals the laptops actually use.
+      set -ga terminal-features ',alacritty*:RGB,xterm-ghostty:RGB'
+      set -ga terminal-overrides ',alacritty:Tc,xterm-ghostty:Tc'
+    '';
+  };
 }
