@@ -20,9 +20,24 @@
     # nixpkgs follows: its build (rust-overlay + bun2nix) is pinned to its own inputs
     # and forcing our 25.11 under it would just break the from-source build.
     omp.url = "github:can1357/oh-my-pi";
+
+    # Emacs 31 for the VMs, same two-piece recipe as nixos-laptops: emacs-overlay
+    # gives `emacs-unstable-nox', and the emacs-31 release branch is swapped in as
+    # its src (overlays/emacs-31-branch.nix) because emacs-overlay's unstable
+    # tracks pretest tags only and skipped 31.1-rc1. Costs the cache.nixos.org
+    # substitute the old emacs30-nox had: built once on cdssrv02, cdssrv03 pulls
+    # it from Harmonia. Drop both inputs once nixpkgs stable carries emacs31.
+    emacs-overlay = {
+      url = "github:nix-community/emacs-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    emacs-31 = {
+      url = "github:emacs-mirror/emacs/emacs-31";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, microvm, omp }:
+  outputs = { self, nixpkgs, microvm, omp, emacs-overlay, emacs-31 }:
     let
       system = "x86_64-linux";
       mkVM = host: nixpkgs.lib.nixosSystem {
@@ -32,6 +47,10 @@
           # Guests deliberately run the stock nixpkgs kernel (no cachyos overlay) so
           # their whole closure substitutes from cache.nixos.org instead of rebuilding.
           microvm.nixosModules.microvm
+          { nixpkgs.overlays = [
+              emacs-overlay.overlays.default
+              (import ./overlays/emacs-31-branch.nix emacs-31)
+            ]; }
           ./hosts/common
           (./hosts + "/${host}")
         ];
