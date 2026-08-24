@@ -28,9 +28,12 @@
 #   erpnext-uat up      (pull, create volumes, start, create the site once)
 #   erpnext-uat down / status / logs / bench <args>
 #
-# Secrets: passwords live in /var/lib/erpnext-uat.env on the VM (mode 0600,
-# owner cristian), NOT in this repo. `erpnext-uat up` generates one with random
-# passwords on first run and tells you where it is.
+# Secrets: passwords live in ~/.config/erpnext-uat/env on the VM (mode 0600),
+# NOT in this repo. `erpnext-uat up` generates one with random passwords on
+# first run and prints the admin password. Under $HOME rather than /var/lib
+# because the whole stack is rootless — /var/lib is root-owned, and the rest of
+# the stack's state (images, volumes) already lives on /home for the same
+# reason.
 let
   # Single source of truth for the compose-ish topology. Kept as a shell
   # function library rather than declarative oci-containers because the stack is
@@ -43,7 +46,7 @@ let
       IMAGE_DB=docker.io/mariadb:10.6
       IMAGE_REDIS=docker.io/redis:7-alpine
       SITE=uat.localhost
-      ENVF=/var/lib/erpnext-uat.env
+      ENVF="''${XDG_CONFIG_HOME:-$HOME/.config}/erpnext-uat/env"
       NET=erpnext-uat
 
       # Host-side ports (cdssrv02 numbers + 100 to keep the two unambiguous).
@@ -56,6 +59,7 @@ let
         if [ ! -f "$ENVF" ]; then
           echo "→ generating $ENVF with random passwords"
           umask 077
+          mkdir -p "$(dirname "$ENVF")"
           {
             echo "MYSQL_ROOT_PASSWORD=$(head -c18 /dev/urandom | base64 | tr -d '/+=')"
             echo "ERPNEXT_ADMIN_PASSWORD=$(head -c18 /dev/urandom | base64 | tr -d '/+=')"
