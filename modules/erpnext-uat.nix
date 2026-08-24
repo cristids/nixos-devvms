@@ -109,7 +109,12 @@ let
         done
         seed_sites_volume
 
+        # --restart=unless-stopped: a VM reboot otherwise leaves all six
+        # containers Exited (podman does not restore them), so the UAT site
+        # silently disappears until someone runs `up` again. With linger on for
+        # cristian, the user-level podman restart service brings them back.
         podman container exists erpnext-uat-mariadb || podman run -d \
+          --restart=unless-stopped \
           --name erpnext-uat-mariadb --network "$NET" \
           --env-file "$ENVF" -p "$P_DB:3306" \
           -v erpnext-uat-mariadb:/var/lib/mysql \
@@ -120,10 +125,12 @@ let
           --skip-innodb-read-only-compressed >/dev/null
 
         podman container exists erpnext-uat-redis || podman run -d \
+          --restart=unless-stopped \
           --name erpnext-uat-redis --network "$NET" \
           -p "$P_REDIS:6379" "$IMAGE_REDIS" >/dev/null
 
         podman container exists erpnext-uat-web || podman run -d \
+          --restart=unless-stopped \
           --name erpnext-uat-web --network "$NET" \
           --env-file "$ENVF" -p "$P_WEB:8000" \
           -v erpnext-uat-sites:/home/frappe/frappe-bench/sites \
@@ -134,6 +141,7 @@ let
           "$IMAGE_ERP" >/dev/null
 
         podman container exists erpnext-uat-nginx || podman run -d \
+          --restart=unless-stopped \
           --name erpnext-uat-nginx --network "$NET" -p "$P_UI:8080" \
           -e BACKEND=erpnext-uat-web:8000 \
           -e SOCKETIO=erpnext-uat-web:9000 \
@@ -145,6 +153,7 @@ let
           "$IMAGE_ERP" >/dev/null
 
         podman container exists erpnext-uat-worker || podman run -d \
+          --restart=unless-stopped \
           --name erpnext-uat-worker --network "$NET" \
           -v erpnext-uat-sites:/home/frappe/frappe-bench/sites \
           -v erpnext-uat-logs:/home/frappe/frappe-bench/logs \
@@ -153,6 +162,7 @@ let
           "$IMAGE_ERP" bench worker --queue default,short,long >/dev/null
 
         podman container exists erpnext-uat-scheduler || podman run -d \
+          --restart=unless-stopped \
           --name erpnext-uat-scheduler --network "$NET" \
           -v erpnext-uat-sites:/home/frappe/frappe-bench/sites \
           -v erpnext-uat-logs:/home/frappe/frappe-bench/logs \
@@ -255,8 +265,16 @@ in
   };
 
   # Containers keep running when the user is not logged in — otherwise the
-  # stack dies the moment an ssh session ends.
+  # stack dies the moment an ssh session ends. Linger also gives the user
+  # manager a boot-time start, which is what lets podman-restart (below) run
+  # without anyone logging in.
   users.users.cristian.linger = true;
+
+  # `--restart=unless-stopped` on a container is only a stored policy; something
+  # has to act on it after a reboot. podman ships a user unit for exactly that,
+  # but nothing enables it by default — without this the whole UAT stack comes
+  # back Exited from every VM restart (observed 2026-08-24).
+  systemd.user.services.podman-restart.wantedBy = [ "default.target" ];
 
   # UI (8170) and the web/db/redis host ports the stack publishes. The VM is on
   # the LAN via macvtap, so this is what makes the UAT site reachable from the
