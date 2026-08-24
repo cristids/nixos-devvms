@@ -2,6 +2,24 @@
 
 let
   openspec = pkgs.callPackage ../pkgs/openspec { };
+
+  # claude-code, pinned to the latest upstream release ahead of nixpkgs (which
+  # carries 2.1.140 here — days-to-weeks behind downloads.claude.ai). Same
+  # override pattern as cdssrv02's modules/system/base.nix; kept in this repo so
+  # the VMs can move independently of the host's bump cycle.
+  #
+  # To bump: change `claudeCodeVersion`, then get the hash with
+  #   nix store prefetch-file --json \
+  #     "https://downloads.claude.ai/claude-code-releases/<VER>/linux-x64/claude"
+  # Drop the override once nixpkgs stable catches up past this version.
+  claudeCodeVersion = "2.1.241";
+  claudeCodePinned = pkgs.claude-code.overrideAttrs (_: {
+    version = claudeCodeVersion;
+    src = pkgs.fetchurl {
+      url = "https://downloads.claude.ai/claude-code-releases/${claudeCodeVersion}/linux-x64/claude";
+      hash = "sha256-B3G9hmz/grdlgfwEmfZSnho2hFB48UT4yB3Ms7xwN7g=";
+    };
+  });
 in
 
 # Coding agent: omp (github:can1357/oh-my-pi, flake input) — Can Bölük's fork of
@@ -21,7 +39,10 @@ in
 # only if models.yml is missing, so hand edits survive. Delete models.yml + restart
 # the service (or reboot) to re-render after a key rotation.
 {
-  environment.systemPackages = [ ompPkg openspec ];
+  # Two agents on purpose: omp (Melious-backed, per-VM key) and claude-code
+  # (Anthropic account, user runs `claude` and authenticates interactively —
+  # no credential is baked into the VM image).
+  environment.systemPackages = [ ompPkg openspec claudeCodePinned ];
 
   systemd.services.omp-models-seed = {
     description = "Seed omp models.yml/config.yml from /var/lib/melious.key";
