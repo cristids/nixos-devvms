@@ -83,17 +83,20 @@ let
         # the volume's ownership (uid 1000 inside = cristian's subuid range)
         # stays correct without any chown from the host side.
         podman volume exists erpnext-uat-sites || podman volume create erpnext-uat-sites >/dev/null
+        # NB: no heredoc here. This shell body is nested inside a Nix indented
+        # string, and Nix's dedent does not reliably land a heredoc terminator
+        # at column 0 — an indented `CONF` is not a terminator, and bash dies
+        # with "unexpected end of file". printf builds the JSON instead.
         podman run --rm -v erpnext-uat-sites:/sites "$IMAGE_ERP" bash -c '
           if [ ! -f /sites/common_site_config.json ]; then
-            cat > /sites/common_site_config.json <<CONF
-        {
-          "db_host": "erpnext-uat-mariadb",
-          "db_port": 3306,
-          "redis_cache": "redis://erpnext-uat-redis:6379/0",
-          "redis_queue": "redis://erpnext-uat-redis:6379/1",
-          "redis_socketio": "redis://erpnext-uat-redis:6379/2"
-        }
-        CONF
+            printf "%s\n" \
+              "{" \
+              "  \"db_host\": \"erpnext-uat-mariadb\"," \
+              "  \"db_port\": 3306," \
+              "  \"redis_cache\": \"redis://erpnext-uat-redis:6379/0\"," \
+              "  \"redis_queue\": \"redis://erpnext-uat-redis:6379/1\"," \
+              "  \"redis_socketio\": \"redis://erpnext-uat-redis:6379/2\"" \
+              "}" > /sites/common_site_config.json
           fi
           [ -f /sites/apps.txt ] || printf "frappe\nerpnext\n" > /sites/apps.txt
         '
