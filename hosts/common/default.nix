@@ -1,7 +1,9 @@
 { config, lib, pkgs, ... }:
 
-# Shared base for the dev VMs (host side lives in cdssrv03's flake: modules/dev-vm.nix;
-# per-VM deltas: ../devpro, ../devhobby — hostname + MAC live there).
+# Shared base for the dev VMs (host side lives in cdssrv02's flake:
+# modules/system/dev-vm.nix — moved off cdssrv03 2026-08-27 when that box was
+# earmarked for a bare-metal Ubuntu vast.ai reinstall; per-VM deltas:
+# ../devpro, ../devhobby — hostname + MAC live there).
 #
 # Two VMs on purpose: `devpro` (professional work — will eventually hold SCOPED work
 # credentials, e.g. an Azure DevOps key, so agents in it get driven with more care) and
@@ -27,10 +29,11 @@
 
   microvm = {
     hypervisor = "qemu"; # most featureful of the eight: virtiofs, ballooning, mature
-    vcpu = 24;           # = one full socket's threads; NUMA-pin later if it matters
-    mem = 131072;        # MB. qemu only faults pages in as the guest touches them,
-                         # so this is a ceiling, not a reservation. Runtime shrink
-                         # is possible with microvm-balloon.
+    vcpu = 24;
+    mem = 32768;         # MB. qemu only faults pages in as the guest touches them,
+                         # so this is a ceiling, not a reservation. Was 131072 on
+                         # the 376GB cdssrv03; 32G each is the budget on cdssrv02,
+                         # where the VMs share RAM with the model roster + ZFS ARC.
 
     # NIC: macvtap per-VM, defined in ../devpro, ../devhobby (unique id + MAC).
 
