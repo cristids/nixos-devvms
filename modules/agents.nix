@@ -1,7 +1,75 @@
-{ pkgs, ompPkg, ... }:
+{ pkgs, ompPkg, herdrPkg, ... }:
 
 let
   openspec = pkgs.callPackage ../pkgs/openspec { };
+
+  # codex (OpenAI's Rust coding agent), pinned to the latest upstream release —
+  # same recipe as cdssrv02's modules/system/base.nix, kept here so the VMs move
+  # independently of the host's bump cycle. nixpkgs ships an old 0.92.0 and
+  # upstream releases every few days.
+  #
+  # The npm package @openai/codex is a JS shim that exec's a precompiled,
+  # *statically linked* (musl) Rust binary shipped in @openai/codex@<VER>-linux-x64,
+  # so fetch that tarball directly: no npm, no compile, no patchelf. The tarball
+  # also bundles the ripgrep codex shells out to.
+  #
+  # To bump: change `codexVersion`, then update the hash with:
+  #   nix store prefetch-file --json \
+  #     "https://registry.npmjs.org/@openai/codex/-/codex-<VER>-linux-x64.tgz"
+  codexVersion = "0.144.1";
+  codexPinned = pkgs.stdenvNoCC.mkDerivation {
+    pname = "codex";
+    version = codexVersion;
+    src = pkgs.fetchurl {
+      url = "https://registry.npmjs.org/@openai/codex/-/codex-${codexVersion}-linux-x64.tgz";
+      hash = "sha256-4qZNQhwQqvC348DovXG3Hkl9dYIwAzGLZ0onjXGt0Mc=";
+    };
+    sourceRoot = "package";            # tarball top-level dir
+    dontConfigure = true;
+    dontBuild = true;
+    dontPatchELF = true;               # binary is statically linked (musl)
+    installPhase = ''
+      runHook preInstall
+      vendor=vendor/x86_64-unknown-linux-musl
+      install -Dm755 "$vendor/bin/codex" "$out/bin/codex"
+      install -Dm755 "$vendor/codex-path/rg" "$out/bin/rg-codex" || true
+      runHook postInstall
+    '';
+    meta = {
+      description = "OpenAI Codex CLI (Rust), pinned to latest precompiled release";
+      homepage = "https://github.com/openai/codex";
+      mainProgram = "codex";
+      platforms = [ "x86_64-linux" ];
+    };
+  };
+
+  # herdr config. Read at startup and on `herdr server reload-config`; client
+  # and server share this one file.
+  herdrConfigToml = pkgs.writeText "herdr-config.toml" ''
+    # Managed by modules/agents.nix — do not edit in place; edit the Nix module
+    # and redeploy, then: systemctl --user restart herdr
+
+    [update]
+    # Version is pinned by the Nix flake input, so a background check can't lead
+    # to a usable upgrade here — and `herdr update` MUST NOT be run: it would
+    # download a binary over the Nix store path and be reverted on next rebuild.
+    # Bump via the flake input, in every repo that pins herdr.
+    channel = "stable"
+    version_check = false
+    manifest_check = false
+
+    [ui]
+    show_agent_labels_on_pane_borders = true
+
+    [ui.toast]
+    delivery = "herdr"
+
+    [experimental]
+    # Restore panes' scrollback across a server restart. Upstream files this
+    # under [experimental], NOT [server] — under the wrong table it parses fine
+    # and is silently ignored.
+    pane_history = true
+  '';
 
   # claude-code, pinned to the latest upstream release ahead of nixpkgs (which
   # carries 2.1.140 here — days-to-weeks behind downloads.claude.ai). Same
@@ -39,10 +107,86 @@ in
 # only if models.yml is missing, so hand edits survive. Delete models.yml + restart
 # the service (or reboot) to re-render after a key rotation.
 {
-  # Two agents on purpose: omp (Melious-backed, per-VM key) and claude-code
-  # (Anthropic account, user runs `claude` and authenticates interactively —
-  # no credential is baked into the VM image).
-  environment.systemPackages = [ ompPkg openspec claudeCodePinned ];
+  # Three agents on purpose: omp (Melious-backed, per-VM key), claude-code and
+  # codex (each an upstream account — the user runs `claude` / `codex` and
+  # authenticates interactively; no credential is baked into the VM image).
+  environment.systemPackages = [ ompPkg openspec claudeCodePinned codexPinned herdrPkg ];
+
+  # The user manager must run without an active login, or the herdr session dies
+  # on logout and never returns at boot. devpro already gets this from
+  # erpnext-uat.nix, but that module is devpro-only — assert it here so devhobby
+  # gets it too (same value, so the two definitions agree).
+  users.users.cristian.linger = true;
+
+  # herdr headless server, per user. Same shape as cdssrv02's
+  # modules/services/herdr-server.nix — see that file for the full rationale.
+  # Short version: `herdr --remote <target>` has no user/sudo flag, so the
+  # account is whatever the ssh target resolves to and the socket it needs is
+  # mode 0700 under that account's $HOME. cristian is the account the laptop
+  # keys are authorized for, so the server runs as a systemd USER service with
+  # lingering on (asserted just above) — the workspace must outlive the ssh
+  # login that started it and come back at boot.
+  #
+  # Do NOT set XDG_RUNTIME_DIR: herdr derives its socket path from $HOME and an
+  # interactive shell must land on the same path or `herdr status` won't see it.
+  systemd.user.services.herdr = {
+    description = "herdr headless server (agent workspace, UNIX socket)";
+    documentation = [ "https://github.com/herdrdev/herdr" ];
+    wantedBy = [ "default.target" ];
+
+    preStart = ''
+      install -d -m 0700 "$HOME/.config/herdr"
+      install -m 0600 ${herdrConfigToml} "$HOME/.config/herdr/config.toml"
+    '';
+
+    serviceConfig = {
+      Type = "simple";
+      ExecStart = "${herdrPkg}/bin/herdr server";
+      # Graceful stop persists session.json (workspaces/tabs/cwds); SIGKILL
+      # would lose the layout, so give it room to write.
+      ExecStop = "${herdrPkg}/bin/herdr server stop";
+      TimeoutStopSec = 30;
+      KillSignal = "SIGTERM";
+      Restart = "on-failure";
+      RestartSec = 5;
+      # Panes spawn shells and long-running agents; don't reap them as strays
+      # when the main process restarts.
+      KillMode = "mixed";
+    };
+
+    environment.TERM = "xterm-256color";
+    path = with pkgs; [ bashInteractive git openssh ];
+  };
+
+  # Agent integrations are per-user hook FILES under $HOME, not packages, and
+  # `herdr integration install` writes them imperatively — so a rebuilt or
+  # re-provisioned VM would silently come up without them. Install them from a
+  # user service instead, so they are part of the machine definition.
+  #
+  # The command is idempotent (re-running reports "current") and merges into
+  # existing configs rather than overwriting: it appends a SessionStart hook to
+  # ~/.claude/settings.json, ~/.codex/hooks.json and omp's extensions dir,
+  # leaving unrelated settings alone. Hooks are versioned (v8 at time of
+  # writing), so this also upgrades them after a herdr bump.
+  systemd.user.services.herdr-integrations = {
+    description = "Install herdr agent integrations (omp, claude, codex)";
+    wantedBy = [ "default.target" ];
+    after = [ "herdr.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    path = [ herdrPkg pkgs.coreutils ];
+    script = ''
+      # omp needs its extensions dir to exist before the integration will
+      # install; it is created on first run of omp. Don't fail the unit when a
+      # given agent has never been run yet — just skip it and try next boot.
+      for agent in omp claude codex; do
+        herdr integration install "$agent" || \
+          echo "herdr: $agent integration not installed yet (run $agent once, then: systemctl --user restart herdr-integrations)"
+      done
+    '';
+  };
 
   systemd.services.omp-models-seed = {
     description = "Seed omp models.yml/config.yml from /var/lib/melious.key";
