@@ -178,12 +178,20 @@ in
     };
     path = [ herdrPkg pkgs.coreutils ];
     script = ''
-      # omp needs its extensions dir to exist before the integration will
-      # install; it is created on first run of omp. Don't fail the unit when a
-      # given agent has never been run yet — just skip it and try next boot.
+      # Each integration refuses to install unless the agent's config dir
+      # already exists — normally created on that agent's first interactive run.
+      # On a freshly provisioned VM nobody has run claude or codex yet, so the
+      # hooks would be missing until someone did (omp gets its dir from
+      # omp-models-seed, which is why it alone installed on first boot).
+      # Create the dirs up front so the integrations land at boot instead. This
+      # only makes empty directories; no agent config or credential is written.
+      mkdir -p "$HOME/.claude" "$HOME/.codex"
+
+      # Still tolerate a refusal rather than failing the unit: upstream may add
+      # further preconditions, and a missing hook must not block the others.
       for agent in omp claude codex; do
         herdr integration install "$agent" || \
-          echo "herdr: $agent integration not installed yet (run $agent once, then: systemctl --user restart herdr-integrations)"
+          echo "herdr: $agent integration not installed (run $agent once, then: systemctl --user restart herdr-integrations)"
       done
     '';
   };
