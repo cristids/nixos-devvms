@@ -94,9 +94,16 @@
     # Personal devices, plus (2026-08-24, at the user's explicit request) the
     # cdssrv02 management key: that box supervises these VMs from time to time and
     # was otherwise stuck relaying every check through cdssrv03 or a laptop. This
-    # DOES widen the jail — cdssrv02 is the fleet's most connected host — so it is
-    # the one non-personal key here and it stays declarative (this list), never a
-    # hand-edited authorized_keys, so `git log` remains the record of who can enter.
+    # DOES widen the jail — cdssrv02 is the fleet's most connected host — so the
+    # cdssrv02 keys are the only non-personal ones here and they stay declarative
+    # (this list), never a hand-edited authorized_keys, so `git log` remains the
+    # record of who can enter.
+    #
+    # 2026-08-29: added cristian@cdssrv02 alongside root@cdssrv02. root's key only
+    # serves things running as root on the host; interactive work there (herdr
+    # panes, agents, plain ssh) runs as cristian and was hitting "Permission
+    # denied (publickey)". Same trust boundary as the root key already crossed —
+    # anyone who is root on cdssrv02 can read cristian's key anyway.
     openssh.authorizedKeys.keys = [
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJsaEWkVBhknpRAx+efz9vqhzfgs01h/Ea4aSZTbNMZi cristianstamateanu@Mac.localdomain"
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL9++NSSIpNIbwpGl9vVgfsgsys7vmr39BWtifuk7+gx cristian@gpdp4-nix"
@@ -104,6 +111,7 @@
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJHsFFo1EsrztaYe4KmPzccn4nsNYJ4eaOg94GUEfxJf cristian@dell"
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAoh80aoxvU9I2EA1Kroxr4HHOrUsBZtjpbDQ5spMwYH cristian@gpd-mini"
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF8ijJLCAgCz2hYYEK4QOO+Te0RiJuHgGondl7uWsrBP root@cdssrv02"
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJbFNNy7FwO4p9QTTWMGKcjAyZCcVu+N47HCRRCMOmjI cristian@cdssrv02"
     ];
   };
   security.sudo.wheelNeedsPassword = false;
