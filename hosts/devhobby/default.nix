@@ -11,6 +11,14 @@
   environment.systemPackages = with pkgs; [
     sbcl
     swi-prolog
+
+    # tramp-rpc server (2026-08-30) — laptop Emacs edits this VM over
+    # /rpc:devhobby: instead of /ssh: (MessagePack-RPC, no shell parsing).
+    # Lands at /run/current-system/sw/bin/tramp-rpc-server; the laptop-side
+    # client finds it via PATH, so no auto-deploy into ~/.cache (which VM
+    # reprovisions would wipe). Client package: nixos-laptops, same flake
+    # input.
+    emacs-tramp-rpc-server
   ];
 
   microvm.interfaces = [{

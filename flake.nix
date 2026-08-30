@@ -52,9 +52,22 @@
       url = "github:emacs-mirror/emacs/emacs-31";
       flake = false;
     };
+
+    # tramp-rpc (ArthurHeymans/emacs-tramp-rpc) — fast TRAMP backend: laptop
+    # Emacs speaks MessagePack-RPC to a small Rust server on the guest instead
+    # of parsing shell output. The overlay provides `emacs-tramp-rpc-server`
+    # (the binary, installed on devhobby at /run/current-system/sw/bin/
+    # tramp-rpc-server — the client's documented NixOS path) and injects
+    # `tramp-rpc` into the emacsPackages scope. Server preinstall beats the
+    # client's ~/.cache auto-deploy here because VM reprovisions wipe home.
+    # Client side lives in nixos-laptops (same input) + the mini emacs config
+    # (`/rpc:devhobby:` paths). No nixpkgs follows: builds with our 25.11
+    # rustPlatform via the overlay's callPackage, its own inputs are only
+    # used for its CI cross-builds.
+    emacs-tramp-rpc.url = "github:ArthurHeymans/emacs-tramp-rpc";
   };
 
-  outputs = { self, nixpkgs, microvm, omp, herdr, emacs-overlay, emacs-31 }:
+  outputs = { self, nixpkgs, microvm, omp, herdr, emacs-overlay, emacs-31, emacs-tramp-rpc }:
     let
       system = "x86_64-linux";
       mkVM = host: nixpkgs.lib.nixosSystem {
@@ -70,6 +83,7 @@
           { nixpkgs.overlays = [
               emacs-overlay.overlays.default
               (import ./overlays/emacs-31-branch.nix emacs-31)
+              emacs-tramp-rpc.overlays.default
             ]; }
           ./hosts/common
           (./hosts + "/${host}")
