@@ -23,10 +23,20 @@
     # Harness web-UI toolchain (2026-08-31, ~/agentic-dev-team PLAN.org D-UI-3):
     # tailwindcss_4 = the standalone CLI (no node), matches the stack ADR.
     # playwright-driver browsers land via the env vars below; projects pin
-    # `pip playwright==1.56.1` (MUST match playwright-driver.version on this
-    # nixpkgs pin — mismatch = silent browser-launch failures).
+    # pip playwright to the 1.56.x line (driver here is 1.56.1; PyPI ships
+    # 1.56.0 — same browser revisions, compatible).
     tailwindcss_4
   ];
+
+  # nix-ld: pip wheels with C/C++ extensions (greenlet, uvloop, pydantic-core…)
+  # expect a conventional dynamic linker; without this every second wheel dies
+  # with "libstdc++.so.6: cannot open shared object file" (litellm and
+  # playwright both hit it, 2026-08-31). This is the durable fix; per-process
+  # LD_LIBRARY_PATH wrappers are the workaround it replaces.
+  programs.nix-ld = {
+    enable = true;
+    libraries = with pkgs; [ stdenv.cc.cc.lib zlib openssl ];
+  };
 
   # Playwright on NixOS: browsers come from nixpkgs (patched ELF), NOT from
   # `playwright install` (its downloads are dynamically linked and break here).
