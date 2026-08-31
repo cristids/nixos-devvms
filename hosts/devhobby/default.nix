@@ -19,7 +19,22 @@
     # reprovisions would wipe). Client package: nixos-laptops, same flake
     # input.
     emacs-tramp-rpc-server
+
+    # Harness web-UI toolchain (2026-08-31, ~/agentic-dev-team PLAN.org D-UI-3):
+    # tailwindcss_4 = the standalone CLI (no node), matches the stack ADR.
+    # playwright-driver browsers land via the env vars below; projects pin
+    # `pip playwright==1.56.1` (MUST match playwright-driver.version on this
+    # nixpkgs pin — mismatch = silent browser-launch failures).
+    tailwindcss_4
   ];
+
+  # Playwright on NixOS: browsers come from nixpkgs (patched ELF), NOT from
+  # `playwright install` (its downloads are dynamically linked and break here).
+  # The env vars point the pip-installed client at the nix-provided browsers.
+  environment.variables = {
+    PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+    PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+  };
 
   microvm.interfaces = [{
     type = "macvtap";
