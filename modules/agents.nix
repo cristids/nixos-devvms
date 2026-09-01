@@ -126,6 +126,7 @@ in
   systemd.user.services.codex-app-server = {
     description = "Paired Codex app-server daemon";
     wantedBy = [ "default.target" ];
+    path = [ pkgs.procps ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
