@@ -127,7 +127,9 @@
     # Same cache stack as the host (most fetches short-circuit through the shared
     # store anyway; these cover builds the guest does itself).
     substituters = [
-      "http://192.168.40.15:5000"
+      # macvtap guests reach cdssrv02 through its vmshim0 address; ARP-flux
+      # protection intentionally prevents using the host's eno1np0 address.
+      "http://192.168.40.28:5000"
       "https://cache.nixos.org"
       "https://nix-community.cachix.org"
       "https://devenv.cachix.org"
