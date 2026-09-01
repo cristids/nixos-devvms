@@ -1,20 +1,12 @@
 {
-  description = "Dev VM guests (devpro/devhobby) — microvm.nix jails hosted on cdssrv03";
+  description = "Dev VM guests (devpro/devhobby) hosted by libvirt on cdssrv02";
 
   # Same layout idea as nixos-laptops: hosts/ + modules/ + pkgs/, one flake, split by
-  # machine. These configs are CONSUMED by cdssrv03's flake (input `devvms`) — the host
-  # builds the guest closures and shares them into the VMs via the read-only virtiofs
-  # /nix/store. Deploying = rebuild on the host + restart microvm@<name>; nothing is
-  # ever deployed from inside a guest.
+  # machine. The initial raw EFI images are written to libvirt-backed ZFS zvols;
+  # subsequent deployments can be performed normally from inside each guest.
   inputs = {
-    # Same nixpkgs line as cdssrv03 (the consumer overrides this with `follows` so the
-    # guests share the host's store paths instead of pulling a second nixpkgs).
+    # Keep both guests on the same stable NixOS release.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
-
-    microvm = {
-      url = "github:microvm-nix/microvm.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
 
     # omp (can1357/oh-my-pi) — THE oh-my-pi, Can Bölük's fork of pi. Deliberately NO
     # nixpkgs follows: its build (rust-overlay + bun2nix) is pinned to its own inputs
@@ -67,7 +59,7 @@
     emacs-tramp-rpc.url = "github:ArthurHeymans/emacs-tramp-rpc";
   };
 
-  outputs = { self, nixpkgs, microvm, omp, herdr, emacs-overlay, emacs-31, emacs-tramp-rpc }:
+  outputs = { self, nixpkgs, omp, herdr, emacs-overlay, emacs-31, emacs-tramp-rpc }:
     let
       system = "x86_64-linux";
       mkVM = host: nixpkgs.lib.nixosSystem {
@@ -77,9 +69,8 @@
           herdrPkg = herdr.packages.${system}.default;
         };
         modules = [
-          # Guests deliberately run the stock nixpkgs kernel (no cachyos overlay) so
-          # their whole closure substitutes from cache.nixos.org instead of rebuilding.
-          microvm.nixosModules.microvm
+          # Guests deliberately run the stock nixpkgs kernel so their system closure
+          # substitutes from cache.nixos.org instead of rebuilding a custom kernel.
           { nixpkgs.overlays = [
               emacs-overlay.overlays.default
               (import ./overlays/emacs-31-branch.nix emacs-31)

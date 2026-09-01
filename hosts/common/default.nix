@@ -1,9 +1,8 @@
-{ config, lib, pkgs, ... }:
+{ lib, modulesPath, pkgs, ... }:
 
-# Shared base for the dev VMs (host side lives in cdssrv02's flake:
-# modules/system/dev-vm.nix — moved off cdssrv03 2026-08-27 when that box was
-# earmarked for a bare-metal Ubuntu vast.ai reinstall; per-VM deltas:
-# ../devpro, ../devhobby — hostname + MAC live there).
+# Shared base for the dev VMs. The guests are conventional libvirt VMs backed by
+# sparse ZFS zvols on cdssrv02; per-VM CPU, memory, network, and storage policy is
+# kept in the host's libvirt definitions.
 #
 # Two VMs on purpose: `devpro` (professional work — will eventually hold SCOPED work
 # credentials, e.g. an Azure DevOps key, so agents in it get driven with more care) and
@@ -17,6 +16,7 @@
 # Coding agents (pi / oh-my-pi) run inside these VMs only — never on the host.
 {
   imports = [
+    "${modulesPath}/profiles/qemu-guest.nix"
     ../../modules/emacs.nix
     ../../modules/emacs-mini.nix
     ../../modules/dev-tooling.nix
@@ -27,51 +27,40 @@
   time.timeZone = "Europe/Bucharest";
   nixpkgs.config.allowUnfree = true;
 
-  microvm = {
-    hypervisor = "qemu"; # most featureful of the eight: virtiofs, ballooning, mature
-    vcpu = 24;
-    mem = 32768;         # MB. qemu only faults pages in as the guest touches them,
-                         # so this is a ceiling, not a reservation. Was 131072 on
-                         # the 376GB cdssrv03; 32G each is the budget on cdssrv02,
-                         # where the VMs share RAM with the model roster + ZFS ARC.
+  boot = {
+    growPartition = true;
+    loader = {
+      systemd-boot.enable = true;
+      efi.canTouchEfiVariables = false;
+    };
+  };
 
-    # NIC: macvtap per-VM, defined in ../devpro, ../devhobby (unique id + MAC).
+  fileSystems = {
+    "/" = {
+      device = "/dev/disk/by-label/nixos";
+      fsType = "ext4";
+      autoResize = true;
+    };
+    "/boot" = {
+      device = "/dev/disk/by-label/ESP";
+      fsType = "vfat";
+    };
+    "/mnt/host-share" = {
+      device = "hostshare";
+      fsType = "virtiofs";
+      options = [
+        "ro"
+        "nofail"
+        "x-systemd.automount"
+        "x-systemd.idle-timeout=60"
+      ];
+    };
+  };
 
-    # Host /nix/store shared read-only — the guest boots from a tiny squashfs and
-    # sees every package the host has, so cache fixes (harmonia/lantian) apply to
-    # the VM for free.
-    shares = [{
-      tag = "ro-store";
-      proto = "virtiofs";
-      source = "/nix/store";
-      mountPoint = "/nix/.ro-store";
-    }];
-
-    # Writes to /nix/store inside the guest (nix develop, package installs) land in
-    # this overlay instead of erroring on the read-only share.
-    writableStoreOverlay = "/nix/.rw-store";
-
-    # Persistent state. Images are created sparse on first boot under
-    # /var/lib/microvms/<name>/ — thin-provisioned, they only occupy what is
-    # actually written. Root stays the default read-only squashfs + tmpfs;
-    # everything that matters lives on these volumes. Sizes are MB.
-    volumes = [
-      {
-        image = "store-overlay.img";
-        mountPoint = config.microvm.writableStoreOverlay;
-        size = 102400; # 100G
-      }
-      {
-        image = "home.img";
-        mountPoint = "/home";
-        size = 409600; # 400G — projects, ~/.omp, everything precious
-      }
-      {
-        image = "var.img";
-        mountPoint = "/var";
-        size = 51200; # 50G — logs, state, melious.key; survives restarts
-      }
-    ];
+  services.qemuGuest.enable = true;
+  zramSwap = {
+    enable = true;
+    memoryPercent = 25;
   };
 
   networking.useDHCP = lib.mkDefault true;
@@ -116,17 +105,15 @@
   };
   security.sudo.wheelNeedsPassword = false;
 
-  # The /home volume mounts after NixOS's user-dir creation on first boot, so the
-  # home dir would be missing on a freshly provisioned VM. tmpfiles runs after
-  # local-fs.target and repairs that on every boot.
   systemd.tmpfiles.rules = [
     "d /home/cristian 0700 cristian users -"
     "d /var/lib/sshd 0700 root root -"
+    "d /mnt/host-share 0755 root root -"
+    "L+ /home/cristian/host-share - - - - /mnt/host-share"
   ];
 
-  # Root is tmpfs — default /etc/ssh host keys would regenerate every reboot and
-  # trip "REMOTE HOST IDENTIFICATION HAS CHANGED" on every laptop. Keep them on
-  # the persistent /var volume instead (sshd generates them there on first start).
+  # Keep the historical path so migration can preserve the current host keys and
+  # clients do not see an SSH identity change at cutover.
   services.openssh.hostKeys = [
     {
       path = "/var/lib/sshd/ssh_host_ed25519_key";
