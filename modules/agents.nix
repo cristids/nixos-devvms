@@ -118,6 +118,32 @@ in
   # gets it too (same value, so the two definitions agree).
   users.users.cristian.linger = true;
 
+  # `codex app-server daemon bootstrap --remote-control` installs and updates a
+  # paired standalone Codex under $HOME, but its PID backend has no native
+  # systemd unit. Start that managed binary at user-manager boot so pairing is
+  # available before the first SSH client connects. The service is harmless on
+  # a fresh VM before bootstrap has created the standalone installation.
+  systemd.user.services.codex-app-server = {
+    description = "Paired Codex app-server daemon";
+    wantedBy = [ "default.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      managed="$HOME/.codex/packages/standalone/current/codex"
+      if [ -x "$managed" ]; then
+        "$managed" app-server daemon start
+      fi
+    '';
+    preStop = ''
+      managed="$HOME/.codex/packages/standalone/current/codex"
+      if [ -x "$managed" ]; then
+        "$managed" app-server daemon stop
+      fi
+    '';
+  };
+
   # herdr headless server, per user. Same shape as cdssrv02's
   # modules/services/herdr-server.nix — see that file for the full rationale.
   # Short version: `herdr --remote <target>` has no user/sudo flag, so the
