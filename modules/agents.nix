@@ -2,6 +2,7 @@
 
 let
   openspec = pkgs.callPackage ../pkgs/openspec { };
+  bubblewrapCli = pkgs.callPackage ../pkgs/bubblewrap-cli { };
 
   # codex (OpenAI's Rust coding agent), pinned to the latest upstream release —
   # same recipe as cdssrv02's modules/system/base.nix, kept here so the VMs move
@@ -110,7 +111,14 @@ in
   # Three agents on purpose: omp (Melious-backed, per-VM key), claude-code and
   # codex (each an upstream account — the user runs `claude` / `codex` and
   # authenticates interactively; no credential is baked into the VM image).
-  environment.systemPackages = [ ompPkg openspec claudeCodePinned codexPinned herdrPkg ];
+  environment.systemPackages = [
+    ompPkg
+    openspec
+    claudeCodePinned
+    codexPinned
+    bubblewrapCli
+    herdrPkg
+  ];
 
   # The user manager must run without an active login, or the herdr session dies
   # on logout and never returns at boot. devpro already gets this from
