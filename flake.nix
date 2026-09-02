@@ -3,7 +3,8 @@
 
   # Same layout idea as nixos-laptops: hosts/ + modules/ + pkgs/, one flake, split by
   # machine. The initial raw EFI images are written to libvirt-backed ZFS zvols;
-  # subsequent deployments can be performed normally from inside each guest.
+  # subsequent deployments target each full NixOS guest directly. cdssrv02 owns
+  # only their libvirt domains.
   inputs = {
     # Keep both guests on the same stable NixOS release.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
@@ -34,8 +35,8 @@
     # gives `emacs-unstable-nox', and the emacs-31 release branch is swapped in as
     # its src (overlays/emacs-31-branch.nix) because emacs-overlay's unstable
     # tracks pretest tags only and skipped 31.1-rc1. Costs the cache.nixos.org
-    # substitute the old emacs30-nox had: built once on cdssrv02, cdssrv03 pulls
-    # it from Harmonia. Drop both inputs once nixpkgs stable carries emacs31.
+    # substitute the old emacs30-nox had. Drop both inputs once nixpkgs stable
+    # carries emacs31.
     emacs-overlay = {
       url = "github:nix-community/emacs-overlay";
       inputs.nixpkgs.follows = "nixpkgs";

@@ -1,7 +1,7 @@
 # nixos-devvms
 
-NixOS configs for the dev VM jails (`devpro`, `devhobby`) hosted on **cdssrv03** via
-microvm.nix. Same layout as [nixos-laptops](https://github.com/cristids/nixos-laptops):
+NixOS configs for the dev VM jails (`devpro`, `devhobby`) hosted on **cdssrv02** via
+libvirt. Same layout as [nixos-laptops](https://github.com/cristids/nixos-laptops):
 `hosts/` split by machine, shared `modules/`, local `pkgs/`.
 
 | VM | IP | Purpose |
@@ -11,20 +11,18 @@ microvm.nix. Same layout as [nixos-laptops](https://github.com/cristids/nixos-la
 
 ## How these deploy
 
-The VMs never deploy themselves. cdssrv03's flake consumes this repo as input `devvms`;
-the host builds the guest closures and shares them read-only via virtiofs. Ship a change:
+The VMs are full NixOS guests. `cdssrv02` owns their libvirt domain definitions, while
+this repo owns the guest systems. Deploy each configuration directly to its guest:
 
 ```sh
-# from cdssrv02
-cd /root/nixos-devvms && git commit && git push
-cd /etc/nixos/cdssrv03 && nix flake update devvms
-nixos-rebuild switch --flake /etc/nixos/cdssrv03#cdssrv03 --target-host root@cdssrv03
-ssh root@cdssrv03 systemctl restart microvm@devpro microvm@devhobby
+cd /home/cristian/cristids/nixos-devvms
+nixos-rebuild switch --flake .#devpro --target-host devpro --use-remote-sudo
+nixos-rebuild switch --flake .#devhobby --target-host devhobby --use-remote-sudo
 ```
 
-Only laptops (personal-device keys) can ssh INTO the VMs. The host cannot; cdssrv02
-cannot. Anything per-user (Melious key, `gh auth login`, private emacs-config clones)
-is done by the user from a laptop and lands on the persistent `/home` / `/var` volumes.
+Laptops and the `cdssrv02` management keys can ssh into the VMs. Anything per-user
+(Melious key, `gh auth login`, private emacs-config clones) is installed explicitly
+and lands on the persistent `/home` / `/var` volumes.
 
 ## What's inside
 
