@@ -16,8 +16,8 @@ this repo owns the guest systems. Deploy each configuration directly to its gues
 
 ```sh
 cd /home/cristian/cristids/nixos-devvms
-nixos-rebuild switch --flake .#devpro --target-host devpro --use-remote-sudo
-nixos-rebuild switch --flake .#devhobby --target-host devhobby --use-remote-sudo
+nixos-rebuild switch --flake .#devpro --target-host devpro --sudo
+nixos-rebuild switch --flake .#devhobby --target-host devhobby --sudo
 ```
 
 Laptops and the `cdssrv02` management keys can ssh into the VMs. Anything per-user
