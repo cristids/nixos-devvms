@@ -144,6 +144,11 @@ in
   systemd.user.services.codex-app-server = {
     description = "Paired Codex app-server daemon";
     wantedBy = [ "default.target" ];
+    # The daemon resolves and validates `bwrap` only when it starts. Restart it
+    # whenever either side of that relationship changes, otherwise a daemon
+    # kept alive across a system switch can retain the bundled fallback and
+    # continue surfacing the pre-upgrade "could not find bubblewrap" warning.
+    restartTriggers = [ codexPinned bubblewrapPinned ];
     path = [ pkgs.procps ];
     serviceConfig = {
       Type = "oneshot";
