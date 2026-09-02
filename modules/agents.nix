@@ -3,6 +3,17 @@
 let
   openspec = pkgs.callPackage ../pkgs/openspec { };
 
+  # Codex uses `bwrap` for its Linux sandbox. Stable nixpkgs still carries
+  # 0.11.0; pin the 0.11.2 security release (CVE-2026-41163) until it catches up.
+  bubblewrapVersion = "0.11.2";
+  bubblewrapPinned = pkgs.bubblewrap.overrideAttrs (_: {
+    version = bubblewrapVersion;
+    src = pkgs.fetchurl {
+      url = "https://github.com/containers/bubblewrap/releases/download/v${bubblewrapVersion}/bubblewrap-${bubblewrapVersion}.tar.xz";
+      hash = "sha256-aavDAAXSGGuvdzf+rNjaNWM7k89a84g47P8XxfjpJPY=";
+    };
+  });
+
   # codex (OpenAI's Rust coding agent), pinned to the latest upstream release —
   # same recipe as cdssrv02's modules/system/base.nix, kept here so the VMs move
   # independently of the host's bump cycle. nixpkgs ships an old 0.92.0 and
@@ -115,7 +126,7 @@ in
     openspec
     claudeCodePinned
     codexPinned
-    pkgs.bubblewrap # provides `bwrap`, required by Codex's Linux sandbox
+    bubblewrapPinned # provides `bwrap`, required by Codex's Linux sandbox
     herdrPkg
   ];
 
