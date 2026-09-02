@@ -155,6 +155,7 @@
     rsync
     ripgrep
     fd
+    yazi # fast terminal file manager; fleet default
 
     # The laptops ssh in from Alacritty (TERM=alacritty; Ghostty also around).
     # Without these terminfo entries the session falls back to an 8-color TERM
