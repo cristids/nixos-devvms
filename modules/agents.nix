@@ -2,7 +2,6 @@
 
 let
   openspec = pkgs.callPackage ../pkgs/openspec { };
-  bubblewrapCli = pkgs.callPackage ../pkgs/bubblewrap-cli { };
 
   # codex (OpenAI's Rust coding agent), pinned to the latest upstream release —
   # same recipe as cdssrv02's modules/system/base.nix, kept here so the VMs move
@@ -116,7 +115,7 @@ in
     openspec
     claudeCodePinned
     codexPinned
-    bubblewrapCli
+    pkgs.bubblewrap # provides `bwrap`, required by Codex's Linux sandbox
     herdrPkg
   ];
 
