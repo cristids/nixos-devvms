@@ -54,6 +54,47 @@ let
     };
   };
 
+  # Back Herdr's tmux-style pane-to-tab keybindings with the pane.move API.
+  # Custom commands receive the focused pane/tab/workspace IDs from Herdr.
+  herdrPaneTab = pkgs.writeShellApplication {
+    name = "herdr-pane-tab";
+    runtimeInputs = [ pkgs.jq ];
+    text = ''
+      action="''${1:-}"
+      herdr_bin="''${HERDR_BIN_PATH:-herdr}"
+      pane_id="''${HERDR_ACTIVE_PANE_ID:?missing focused Herdr pane}"
+
+      case "$action" in
+        new)
+          exec "$herdr_bin" pane move "$pane_id" --new-tab --focus
+          ;;
+        previous|next)
+          workspace_id="''${HERDR_ACTIVE_WORKSPACE_ID:?missing active Herdr workspace}"
+          current_tab_id="''${HERDR_ACTIVE_TAB_ID:?missing active Herdr tab}"
+          tabs_json="$("$herdr_bin" tab list --workspace "$workspace_id")"
+          target_tab_id="$(${pkgs.jq}/bin/jq -er \
+            --arg current "$current_tab_id" \
+            --arg direction "$action" '
+              .result.tabs | map(.tab_id) as $tabs |
+              ($tabs | index($current)) as $index |
+              if ($tabs | length) < 2 or $index == null then empty
+              elif $direction == "previous" then
+                $tabs[if $index == 0 then ($tabs | length) - 1 else $index - 1 end]
+              else
+                $tabs[if $index == ($tabs | length) - 1 then 0 else $index + 1 end]
+              end
+            ' <<<"$tabs_json")" || exit 0
+          exec "$herdr_bin" pane move "$pane_id" \
+            --tab "$target_tab_id" --split right --focus
+          ;;
+        *)
+          printf 'usage: herdr-pane-tab {new|previous|next}\n' >&2
+          exit 2
+          ;;
+      esac
+    '';
+  };
+
   # herdr config. Read at startup and on `herdr server reload-config`; client
   # and server share this one file.
   herdrConfigToml = pkgs.writeText "herdr-config.toml" ''
@@ -74,6 +115,35 @@ let
 
     [ui.toast]
     delivery = "herdr"
+
+    [keys]
+    prefix = "ctrl+b"
+    split_vertical = "prefix+percent"
+    split_horizontal = "prefix+double_quote"
+    focus_pane_left = ["prefix+h", "prefix+left"]
+    focus_pane_down = ["prefix+j", "prefix+down"]
+    focus_pane_up = ["prefix+k", "prefix+up"]
+    focus_pane_right = ["prefix+l", "prefix+right"]
+    cycle_pane_next = ["prefix+tab", "prefix+o"]
+    last_pane = "prefix+semicolon"
+
+    [[keys.command]]
+    key = "prefix+!"
+    type = "shell"
+    command = "herdr-pane-tab new"
+    description = "break pane into a new tab"
+
+    [[keys.command]]
+    key = "prefix+{"
+    type = "shell"
+    command = "herdr-pane-tab previous"
+    description = "move pane to previous tab"
+
+    [[keys.command]]
+    key = "prefix+}"
+    type = "shell"
+    command = "herdr-pane-tab next"
+    description = "move pane to next tab"
 
     [experimental]
     # Restore panes' scrollback across a server restart. Upstream files this
@@ -205,7 +275,7 @@ in
     };
 
     environment.TERM = "xterm-256color";
-    path = with pkgs; [ bashInteractive git openssh ];
+    path = [ herdrPaneTab ] ++ (with pkgs; [ bashInteractive git openssh ]);
   };
 
   # Agent integrations are per-user hook FILES under $HOME, not packages, and
