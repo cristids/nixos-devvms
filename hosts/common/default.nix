@@ -55,6 +55,16 @@
         "x-systemd.idle-timeout=60"
       ];
     };
+    "/home/cristian/cc-images" = {
+      device = "ccimages";
+      fsType = "virtiofs";
+      options = [
+        "ro"
+        "nofail"
+        "x-systemd.automount"
+        "x-systemd.idle-timeout=60"
+      ];
+    };
   };
 
   services.qemuGuest.enable = true;
@@ -109,6 +119,7 @@
     "d /home/cristian 0700 cristian users -"
     "d /var/lib/sshd 0700 root root -"
     "d /mnt/host-share 0755 root root -"
+    "d /home/cristian/cc-images 0755 cristian users -"
     "L+ /home/cristian/host-share - - - - /mnt/host-share"
   ];
 
