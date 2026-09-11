@@ -130,19 +130,19 @@ let
     [[keys.command]]
     key = "prefix+!"
     type = "shell"
-    command = "herdr-pane-tab new"
+    command = "${herdrPaneTab}/bin/herdr-pane-tab new"
     description = "break pane into a new tab"
 
     [[keys.command]]
     key = "prefix+{"
     type = "shell"
-    command = "herdr-pane-tab previous"
+    command = "${herdrPaneTab}/bin/herdr-pane-tab previous"
     description = "move pane to previous tab"
 
     [[keys.command]]
     key = "prefix+}"
     type = "shell"
-    command = "herdr-pane-tab next"
+    command = "${herdrPaneTab}/bin/herdr-pane-tab next"
     description = "move pane to next tab"
 
     [experimental]
