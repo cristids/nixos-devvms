@@ -18,17 +18,16 @@
     # per-user server so agent panes survive the ssh login that started them
     # (see modules/agents.nix). Attach from a laptop with `herdr --remote devpro`.
     #
-    # Pinned to the v0.8.2 TAG, not the branch: untagged HEAD also reports version
-    # 0.8.2, so branch-tracking would drift the client/server protocol with no
-    # version string to warn us. This pin MUST match cdssrv02's (/etc/nixos) and
+    # This input MUST match cdssrv02's (/etc/nixos) and
     # nixos-laptops' — client and server speak a versioned protocol and refuse to
-    # attach across incompatible versions (0.7.4 = protocol 17, 0.8.2 = 20).
+    # attach across incompatible versions. Since v0.9.0, upstream's default branch
+    # carries the normal stable release. flake.lock keeps each deployment
+    # reproducible while explicit updates advance all three repos together.
     #
     # Repo moved ogulcancelik/herdr -> herdrdev/herdr 2026-08-28 (org transfer,
     # 33.2k stars, AGPL-3.0). The old path redirects; pin the real one.
     herdr = {
-      url = "github:herdrdev/herdr/v0.8.2";
-      inputs.nixpkgs.follows = "nixpkgs";
+      url = "github:herdrdev/herdr";
     };
 
     # Emacs 31 for the VMs, same two-piece recipe as nixos-laptops: emacs-overlay
