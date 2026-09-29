@@ -37,4 +37,11 @@ in
 {
   environment.systemPackages = [ pkgs.himalaya ];
   environment.variables.HIMALAYA_CONFIG = "${himalayaConfig}";
+
+  # Also link it at himalaya's default path: sessions started before a deploy
+  # (long-lived herdr/tmux panes, agents) never see the new environment variable.
+  systemd.tmpfiles.rules = [
+    "d /home/cristian/.config/himalaya 0755 cristian users -"
+    "L+ /home/cristian/.config/himalaya/config.toml - - - - ${himalayaConfig}"
+  ];
 }
