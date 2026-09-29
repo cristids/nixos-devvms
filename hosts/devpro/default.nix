@@ -8,6 +8,8 @@
     # UAT ERPNext (rootless podman, opt-in via `erpnext-uat up`). devpro only —
     # devhobby has no business running the company's ERP.
     ../../modules/erpnext-uat.nix
+    # Read-only Proton mail (himalaya → host read-only IMAP proxy). devpro only.
+    ../../modules/proton-mail.nix
   ];
 
   networking.hostName = "devpro";
