@@ -13,4 +13,9 @@
   ];
 
   networking.hostName = "devpro";
+
+  # No Codex Remote Control on devpro (2026-10-01): it needs OpenAI's standalone
+  # install under ~/.codex/packages, which shadowed the Nix codex on PATH. The
+  # Nix codex (pinned in ../../modules/agents.nix) is the only one here.
+  systemd.user.services.codex-app-server.enable = false;
 }
