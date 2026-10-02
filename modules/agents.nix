@@ -27,13 +27,13 @@ let
   # To bump: change `codexVersion`, then update the hash with:
   #   nix store prefetch-file --json \
   #     "https://registry.npmjs.org/@openai/codex/-/codex-<VER>-linux-x64.tgz"
-  codexVersion = "0.159.3";
+  codexVersion = "0.160.0";
   codexPinned = pkgs.stdenvNoCC.mkDerivation {
     pname = "codex";
     version = codexVersion;
     src = pkgs.fetchurl {
       url = "https://registry.npmjs.org/@openai/codex/-/codex-${codexVersion}-linux-x64.tgz";
-      hash = "sha256-BxkCfP4ybiSJcaLf8KORw1MqPYOLTjzGYL+TsqYG0s4=";
+      hash = "sha256-N6QdYcM5kYK4xye3cJDMehVmvYSdDwkHCgu8b+xMWNw=";
     };
     sourceRoot = "package";            # tarball top-level dir
     dontConfigure = true;
@@ -161,12 +161,12 @@ let
   #   nix store prefetch-file --json \
   #     "https://downloads.claude.ai/claude-code-releases/<VER>/linux-x64/claude"
   # Drop the override once nixpkgs stable catches up past this version.
-  claudeCodeVersion = "2.1.286";
+  claudeCodeVersion = "2.1.287";
   claudeCodePinned = pkgs.claude-code.overrideAttrs (_: {
     version = claudeCodeVersion;
     src = pkgs.fetchurl {
       url = "https://downloads.claude.ai/claude-code-releases/${claudeCodeVersion}/linux-x64/claude";
-      hash = "sha256-/lA/ZcYonVnCPlshrkTwNYP5l90zosv8datPlvuPxz8=";
+      hash = "sha256-OSBImlEJz/V4aho5LCUndAj/Irx5bV7bnBamDloXGPA=";
     };
   });
 in
