@@ -27,7 +27,7 @@
     # Repo moved ogulcancelik/herdr -> herdrdev/herdr 2026-08-28 (org transfer,
     # 33.2k stars, AGPL-3.0). The old path redirects; pin the real one.
     herdr = {
-      url = "github:herdrdev/herdr";
+      url = "github:herdrdev/herdr/v0.9.3";
     };
 
     # Emacs 31 for the VMs, same two-piece recipe as nixos-laptops: emacs-overlay
@@ -56,10 +56,15 @@
     # (`/rpc:devhobby:` paths). No nixpkgs follows: builds with our 25.11
     # rustPlatform via the overlay's callPackage, its own inputs are only
     # used for its CI cross-builds.
-    emacs-tramp-rpc.url = "github:ArthurHeymans/emacs-tramp-rpc";
+    # Pinned to a release tag in lockstep with cdssrv02 and nixos-laptops.
+    emacs-tramp-rpc.url = "github:ArthurHeymans/emacs-tramp-rpc/v0.15.0";
+
+    # nixpkgs-unstable — only for packages stable 25.11 lacks or carries too old
+    # (currently tuios, see modules/tuios.nix). NOT used for the system itself.
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   };
 
-  outputs = { self, nixpkgs, omp, herdr, emacs-overlay, emacs-31, emacs-tramp-rpc }:
+  outputs = { self, nixpkgs, nixpkgs-unstable, omp, herdr, emacs-overlay, emacs-31, emacs-tramp-rpc }:
     let
       system = "x86_64-linux";
       mkVM = host: nixpkgs.lib.nixosSystem {
@@ -67,6 +72,7 @@
         specialArgs = {
           ompPkg = omp.packages.${system}.default;
           herdrPkg = herdr.packages.${system}.default;
+          tuiosPkg = nixpkgs-unstable.legacyPackages.${system}.tuios;
         };
         modules = [
           # Guests deliberately run the stock nixpkgs kernel so their system closure

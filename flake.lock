@@ -92,15 +92,16 @@
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1788088983,
-        "narHash": "sha256-gehY5oGEfMjXkbma1MjF2tiA925uO1HPKB+RqtNklSs=",
+        "lastModified": 1791303274,
+        "narHash": "sha256-ZqDzg1Pynklz6QMnEIpyy754iQoe1qGaSWRlrhxMG5k=",
         "owner": "ArthurHeymans",
         "repo": "emacs-tramp-rpc",
-        "rev": "0df2357baf6cded33a3540fd2885ce46dbec0b77",
+        "rev": "4c4682ed4b3002d528cb990545ca1479d58dde6d",
         "type": "github"
       },
       "original": {
         "owner": "ArthurHeymans",
+        "ref": "v0.15.0",
         "repo": "emacs-tramp-rpc",
         "type": "github"
       }
@@ -155,15 +156,16 @@
         "rust-overlay": "rust-overlay_2"
       },
       "locked": {
-        "lastModified": 1789146769,
-        "narHash": "sha256-a6ObgNmzo6fP8x1NlrqdSt8ajPmperttU/UpLRGfx9o=",
+        "lastModified": 1790708764,
+        "narHash": "sha256-uu452Xe23pSvFk7w7fKPjiaqY5QenUIljao2SFAxpc0=",
         "owner": "herdrdev",
         "repo": "herdr",
-        "rev": "1a7c691559bb6ea8ad366bce68f87f8c3f6db098",
+        "rev": "7b116c05bfda646af39d2524c54e70c751f57ee8",
         "type": "github"
       },
       "original": {
         "owner": "herdrdev",
+        "ref": "v0.9.3",
         "repo": "herdr",
         "type": "github"
       }
@@ -176,11 +178,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1787372347,
-        "narHash": "sha256-Foo41OtooHMiBITAFKdOhitmjrMZqcGy1epJNz7sNQ4=",
+        "lastModified": 1789370898,
+        "narHash": "sha256-QBlvSGth1NfAWw7iePOzFlrz0/pX6CfkFCcPALdySNI=",
         "owner": "ryoppippi",
         "repo": "nix-bun",
-        "rev": "fee8f233ad9409be44259b4f428f83ecb2812e37",
+        "rev": "48e887d7955c1c05b8d4627ed39bafe4bf2455a7",
         "type": "github"
       },
       "original": {
@@ -233,6 +235,22 @@
       "original": {
         "owner": "NixOS",
         "ref": "nixos-26.05",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs-unstable": {
+      "locked": {
+        "lastModified": 1791336361,
+        "narHash": "sha256-o9ZUW4SlEAvFPIyJWnqChhOT/VHpHg8TAvEgmqK1fSI=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "7dd199b0e2993e37b4775ed66b1c291699608c9f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixpkgs-unstable",
         "repo": "nixpkgs",
         "type": "github"
       }
@@ -295,11 +313,11 @@
         "rust-overlay": "rust-overlay_3"
       },
       "locked": {
-        "lastModified": 1787475986,
-        "narHash": "sha256-0ybJ+7WFtXWpVkd4p7ko3T222WX903U9brFY1oKdRHM=",
+        "lastModified": 1791367983,
+        "narHash": "sha256-cwUazWfkJZwMvxvZNDcEqaLkXDRqSRzVLO6iOe/MQLg=",
         "owner": "can1357",
         "repo": "oh-my-pi",
-        "rev": "160ed439ac0df594347e7d7018b813a7ffdb5e81",
+        "rev": "8f905a5f6d94a6685bb00d3b03f2ef90cf27721b",
         "type": "github"
       },
       "original": {
@@ -315,6 +333,7 @@
         "emacs-tramp-rpc": "emacs-tramp-rpc",
         "herdr": "herdr",
         "nixpkgs": "nixpkgs_3",
+        "nixpkgs-unstable": "nixpkgs-unstable",
         "omp": "omp"
       }
     },
@@ -368,11 +387,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1786507911,
-        "narHash": "sha256-w5aZRLbiu7H6TqsYXVMdRKg0S4DRaJpxyqxx86AwxVk=",
+        "lastModified": 1791276535,
+        "narHash": "sha256-iwqAmHTX1IgzTumJR3JayNAQAo5xEmmOuGzB6b2pT/Q=",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "39db48099ad16834af7e27485a4babf9c28b3897",
+        "rev": "b962e5d0c8cd97196c6a882d659fe451b52ad989",
         "type": "github"
       },
       "original": {

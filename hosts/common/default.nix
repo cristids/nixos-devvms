@@ -21,6 +21,7 @@
     ../../modules/emacs-mini.nix
     ../../modules/dev-tooling.nix
     ../../modules/agents.nix
+    ../../modules/tuios.nix
   ];
 
   system.stateVersion = "25.11";
