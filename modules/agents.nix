@@ -13,13 +13,14 @@ let
   });
 
   # Codex uses `bwrap` for its Linux sandbox. Stable nixpkgs still carries
-  # 0.11.0; 0.12.0 fixes sandbox-setup symlink traversal (CVE-2026-87766).
-  bubblewrapVersion = "0.12.0";
+  # 0.11.0; pin 0.13.0 (same as nixos-laptops). 0.12.0 fixed sandbox-setup
+  # symlink traversal (CVE-2026-87766).
+  bubblewrapVersion = "0.13.0";
   bubblewrapPinned = pkgs.bubblewrap.overrideAttrs (_: {
     version = bubblewrapVersion;
     src = pkgs.fetchurl {
       url = "https://github.com/containers/bubblewrap/releases/download/v${bubblewrapVersion}/bubblewrap-${bubblewrapVersion}.tar.xz";
-      hash = "sha256-l2DQBzY+Orunx0dImRD5+C2fylO6O9MoLjlvo8l6MxQ=";
+      hash = "sha256-RzQjdHPA5daV5OkDSjTkOy2/UWRlW9E/pZrjdrK3p2U=";
     };
   });
 
