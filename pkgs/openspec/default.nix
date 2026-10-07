@@ -7,10 +7,10 @@
 # (nix-prefetch-url the tarball) and `deps.outputHash` (build once with a wrong
 # hash, copy the "got:" value).
 let
-  version = "1.10.0";
+  version = "1.14.1";
   src = fetchurl {
     url = "https://registry.npmjs.org/@fission-ai/openspec/-/openspec-${version}.tgz";
-    hash = "sha256-/vzxt9HjjPBqMnnGJFFw3LDSYdjWyOrT8wlrQfS5cfw=";
+    hash = "sha256-SojjNJODFttpFv1POq8iE+b8I7T+Mn79Kv53VMLTsL8=";
   };
 
   # Fixed-output derivation that runs `npm install` to fetch the dep tree.
@@ -36,7 +36,7 @@ let
 
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = "sha256-lpAzmIqNLi98eaWyBQJBUx/8M159I0cHJnrigzurfAI=";
+    outputHash = "sha256-ep3+/HdbI1yxc+kHu8Vq+zKP7JE16R4xM297/Bf+Q00=";
   };
 in
 stdenv.mkDerivation {
