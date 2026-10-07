@@ -3,14 +3,23 @@
 let
   openspec = pkgs.callPackage ../pkgs/openspec { };
 
+  # Keep the sandbox network bridge aligned with the patched laptop package.
+  socatPinned = pkgs.socat.overrideAttrs (_: {
+    version = "1.8.1.3";
+    src = pkgs.fetchurl {
+      url = "http://www.dest-unreach.org/socat/download/socat-1.8.1.3.tar.bz2";
+      hash = "sha256-JbxkdikrLmFCIJicd7C2/Kh7slJdl0ezGmY5sftgJBg=";
+    };
+  });
+
   # Codex uses `bwrap` for its Linux sandbox. Stable nixpkgs still carries
-  # 0.11.0; pin the 0.11.2 security release (CVE-2026-41163) until it catches up.
-  bubblewrapVersion = "0.11.2";
+  # 0.11.0; 0.12.0 fixes sandbox-setup symlink traversal (CVE-2026-87766).
+  bubblewrapVersion = "0.12.0";
   bubblewrapPinned = pkgs.bubblewrap.overrideAttrs (_: {
     version = bubblewrapVersion;
     src = pkgs.fetchurl {
       url = "https://github.com/containers/bubblewrap/releases/download/v${bubblewrapVersion}/bubblewrap-${bubblewrapVersion}.tar.xz";
-      hash = "sha256-aavDAAXSGGuvdzf+rNjaNWM7k89a84g47P8XxfjpJPY=";
+      hash = "sha256-l2DQBzY+Orunx0dImRD5+C2fylO6O9MoLjlvo8l6MxQ=";
     };
   });
 
@@ -42,8 +51,10 @@ let
     installPhase = ''
       runHook preInstall
       vendor=vendor/x86_64-unknown-linux-musl
-      install -Dm755 "$vendor/bin/codex" "$out/bin/codex"
-      install -Dm755 "$vendor/codex-path/rg" "$out/bin/rg-codex" || true
+      mkdir -p "$out/lib/codex" "$out/bin"
+      cp -R "$vendor"/. "$out/lib/codex"
+      ln -s ../lib/codex/bin/codex "$out/bin/codex"
+      ln -s ../lib/codex/bin/codex-code-mode-host "$out/bin/codex-code-mode-host"
       runHook postInstall
     '';
     meta = {
@@ -162,7 +173,12 @@ let
   #     "https://downloads.claude.ai/claude-code-releases/<VER>/linux-x64/claude"
   # Drop the override once nixpkgs stable catches up past this version.
   claudeCodeVersion = "2.1.292";
-  claudeCodePinned = pkgs.claude-code.overrideAttrs (_: {
+  # The launcher prepends its dependencies, so updating system PATH alone
+  # would leave Claude using the older Bubblewrap from stable nixpkgs.
+  claudeCodePinned = (pkgs.claude-code.override {
+    bubblewrap = bubblewrapPinned;
+    socat = socatPinned;
+  }).overrideAttrs (_: {
     version = claudeCodeVersion;
     src = pkgs.fetchurl {
       url = "https://downloads.claude.ai/claude-code-releases/${claudeCodeVersion}/linux-x64/claude";
@@ -197,6 +213,7 @@ in
     claudeCodePinned
     codexPinned
     bubblewrapPinned # provides `bwrap`, required by Codex's Linux sandbox
+    socatPinned # Claude's Linux sandbox network proxy bridge
     herdrPkg
   ];
 
@@ -219,7 +236,18 @@ in
     # kept alive across a system switch can retain the bundled fallback and
     # continue surfacing the pre-upgrade "could not find bubblewrap" warning.
     restartTriggers = [ codexPinned bubblewrapPinned ];
-    path = [ pkgs.procps ];
+    # The app-server daemon inherits this service-local PATH, not the login
+    # shell's /run/current-system/sw/bin. Keep bwrap explicit so the managed
+    # Codex backend uses the distro sandbox instead of its bundled fallback.
+    path = [
+      pkgs.procps
+      bubblewrapPinned
+      # Herdr's Codex SessionStart hook invokes bash, then uses python3 to
+      # report the session to Herdr. Both must be visible to the app-server
+      # daemon because command hooks inherit its deliberately narrow PATH.
+      pkgs.bash
+      pkgs.python3
+    ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
