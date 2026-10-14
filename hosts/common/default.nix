@@ -110,6 +110,7 @@
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINgNQXUGLVwx32MZiKHX7PBePecBsXgRf38CE9PndztD ish@iphone"
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJHsFFo1EsrztaYe4KmPzccn4nsNYJ4eaOg94GUEfxJf cristian@dell"
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAoh80aoxvU9I2EA1Kroxr4HHOrUsBZtjpbDQ5spMwYH cristian@gpd-mini"
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILyBkqGa56Klg8XRKjrngAhWVDlQ+bn/Pu4P1cA6e+1/ cristian@mbp-nix"
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF8ijJLCAgCz2hYYEK4QOO+Te0RiJuHgGondl7uWsrBP root@cdssrv02"
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJbFNNy7FwO4p9QTTWMGKcjAyZCcVu+N47HCRRCMOmjI cristian@cdssrv02"
     ];
