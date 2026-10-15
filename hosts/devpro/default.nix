@@ -18,4 +18,15 @@
   # install under ~/.codex/packages, which shadowed the Nix codex on PATH. The
   # Nix codex (pinned in ../../modules/agents.nix) is the only one here.
   systemd.user.services.codex-app-server.enable = false;
+
+  # ERPNext dev benches (`bench serve`): 8001 (uat), 8030 (test3) and mailpit 8025,
+  # reachable only from Work (.15, laptops) and Servers (.40) — not the whole LAN.
+  # 8001/8025 used to be hand-inserted iptables rules that a firewall reload drops.
+  networking.firewall.extraCommands = ''
+    for net in 192.168.15.0/24 192.168.40.0/24; do
+      for port in 8001 8025 8030; do
+        iptables -A nixos-fw -i enp3s0 -s "$net" -p tcp --dport "$port" -j nixos-fw-accept
+      done
+    done
+  '';
 }
