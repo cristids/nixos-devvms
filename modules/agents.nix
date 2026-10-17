@@ -37,13 +37,13 @@ let
   # To bump: change `codexVersion`, then update the hash with:
   #   nix store prefetch-file --json \
   #     "https://registry.npmjs.org/@openai/codex/-/codex-<VER>-linux-x64.tgz"
-  codexVersion = "0.162.1";
+  codexVersion = "0.163.0";
   codexPinned = pkgs.stdenvNoCC.mkDerivation {
     pname = "codex";
     version = codexVersion;
     src = pkgs.fetchurl {
       url = "https://registry.npmjs.org/@openai/codex/-/codex-${codexVersion}-linux-x64.tgz";
-      hash = "sha256-dBdxFni0ZO7nBmQSbjnoi7PITCko2g5x8UtW4E/1wJ8=";
+      hash = "sha256-MO/Jdzi5dZQNeLWam+oRX6NAQLcygH1U7DWua3Uo3pQ=";
     };
     sourceRoot = "package";            # tarball top-level dir
     dontConfigure = true;
@@ -173,7 +173,7 @@ let
   #   nix store prefetch-file --json \
   #     "https://downloads.claude.ai/claude-code-releases/<VER>/linux-x64/claude"
   # Drop the override once nixpkgs stable catches up past this version.
-  claudeCodeVersion = "2.1.300";
+  claudeCodeVersion = "2.1.302";
   # The launcher prepends its dependencies, so updating system PATH alone
   # would leave Claude using the older Bubblewrap from stable nixpkgs.
   claudeCodePinned = (pkgs.claude-code.override {
@@ -183,7 +183,7 @@ let
     version = claudeCodeVersion;
     src = pkgs.fetchurl {
       url = "https://downloads.claude.ai/claude-code-releases/${claudeCodeVersion}/linux-x64/claude";
-      hash = "sha256-Z03roLupruR59FA8Q4tJMDtv3TBLmkcbFJd6rsUhVFM=";
+      hash = "sha256-YNfrfxL7sopSUz/ovliECXQDViqgLcc5kaAhxwZ+KaU=";
     };
   });
 in
