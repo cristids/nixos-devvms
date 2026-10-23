@@ -173,7 +173,7 @@ let
   #   nix store prefetch-file --json \
   #     "https://downloads.claude.ai/claude-code-releases/<VER>/linux-x64/claude"
   # Drop the override once nixpkgs stable catches up past this version.
-  claudeCodeVersion = "2.1.305";
+  claudeCodeVersion = "2.1.309";
   # The launcher prepends its dependencies, so updating system PATH alone
   # would leave Claude using the older Bubblewrap from stable nixpkgs.
   claudeCodePinned = (pkgs.claude-code.override {
@@ -183,7 +183,7 @@ let
     version = claudeCodeVersion;
     src = pkgs.fetchurl {
       url = "https://downloads.claude.ai/claude-code-releases/${claudeCodeVersion}/linux-x64/claude";
-      hash = "sha256-hstyKraDSId9unlx5NDGWZGeBeYijAXgBug9oyDmVu8=";
+      hash = "sha256-TXBKiuy+A4r/owAPSYrhfBtPdTrdj6y4dkEgr/yZtlg=";
     };
   });
 in
