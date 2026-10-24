@@ -81,6 +81,9 @@
               emacs-overlay.overlays.default
               (import ./overlays/emacs-31-branch.nix emacs-31)
               emacs-tramp-rpc.overlays.default
+              # Last: leaf packages devvm-update-auto held back on an older
+              # nixpkgs because they stopped building (auto-pins.json).
+              (import ./overlays/auto-pins.nix)
             ]; }
           ./hosts/common
           (./hosts + "/${host}")
