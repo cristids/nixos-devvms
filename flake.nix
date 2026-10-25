@@ -7,11 +7,11 @@
   # only their libvirt domains.
   inputs = {
     # Keep both guests on the same stable NixOS release.
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     # omp (can1357/oh-my-pi) — THE oh-my-pi, Can Bölük's fork of pi. Deliberately NO
     # nixpkgs follows: its build (rust-overlay + bun2nix) is pinned to its own inputs
-    # and forcing our 25.11 under it would just break the from-source build.
+    # and forcing our stable nixpkgs under it would just break the from-source build.
     omp.url = "github:can1357/oh-my-pi";
 
     # herdr — terminal workspace manager for AI coding agents, run as a headless
@@ -60,7 +60,7 @@
     # `tramp-rpc` into the emacsPackages scope. Server preinstall beats the
     # client's ~/.cache auto-deploy here because VM reprovisions wipe home.
     # Client side lives in nixos-laptops (same input) + the mini emacs config
-    # (`/rpc:devhobby:` paths). No nixpkgs follows: builds with our 25.11
+    # (`/rpc:devhobby:` paths). No nixpkgs follows: builds with our stable
     # rustPlatform via the overlay's callPackage, its own inputs are only
     # used for its CI cross-builds.
     # Pinned to a release tag in lockstep with cdssrv02 and nixos-laptops.

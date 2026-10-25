@@ -11,5 +11,8 @@ final: prev: {
     inherit src;
     version = "31.1-${src.shortRev or "git"}";
     name = "emacs-nox-31.1-${src.shortRev or "git"}";
+    # Stable nixpkgs backports CVE fixes as patches onto emacs 30; the 31 branch
+    # already contains them (26.05: CVE-2026-108976 tramp fix -> "reversed patch").
+    patches = builtins.filter (p: builtins.match ".*CVE-.*" (toString p) == null) (old.patches or [ ]);
   });
 }
