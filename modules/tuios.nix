@@ -25,4 +25,16 @@
     };
     environment.TERM = "xterm-256color";
   };
+
+  # Agent integrations for Claude Code and Codex: pane state + tuios skill.
+  # The settings files are mutable, so `tuios integration install` merges its
+  # version-marked entries in at every activation (no-op when current). Same
+  # block as nixos_llm_srv modules/services/tuios-server.nix.
+  # Codex asks once per machine to trust new hooks.
+  system.userActivationScripts.tuiosIntegrations = ''
+    if [ "$(id -un)" = cristian ]; then
+      ${tuiosPkg}/bin/tuios integration install claude-code codex \
+        || echo "tuios integration install failed (non-fatal)" >&2
+    fi
+  '';
 }
