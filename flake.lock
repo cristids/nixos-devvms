@@ -416,11 +416,11 @@
     },
     "nixpkgs_5": {
       "locked": {
-        "lastModified": 1787814960,
-        "narHash": "sha256-PYZq1qzCJXC2zGI0mH07vrZBsw6DRBAOX0jN1pPtqOQ=",
+        "lastModified": 1792639626,
+        "narHash": "sha256-VpGxEz/7DxwNTMgZGsceZ73aUM1nH7C+84HqlTNP128=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "c27cdad491a991b11ed731760aa2ef8db0cb0410",
+        "rev": "d9c20b603f4807ed37779c2aee920e8639fd5025",
         "type": "github"
       },
       "original": {
@@ -634,16 +634,16 @@
         "treefmt-nix": "treefmt-nix_3"
       },
       "locked": {
-        "lastModified": 1792258594,
-        "narHash": "sha256-1p9LCTwVuXQBFjWFpt9uvDorj/UvKh809RZy48prglU=",
+        "lastModified": 1792926175,
+        "narHash": "sha256-Ss8jYuaCkivmAzbwnlPciOtR9ftsy7wAg/mNxm/WsK0=",
         "owner": "Gaurav-Gosain",
         "repo": "tuios",
-        "rev": "f8b7820aa685b28295af46e1f32fb20b0d8461dc",
+        "rev": "3638a6f2093edfa7396b6233515786de4dbda683",
         "type": "github"
       },
       "original": {
         "owner": "Gaurav-Gosain",
-        "ref": "v0.10.1",
+        "ref": "v0.11.0",
         "repo": "tuios",
         "type": "github"
       }
