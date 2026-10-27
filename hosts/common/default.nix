@@ -45,6 +45,9 @@
     "/boot" = {
       device = "/dev/disk/by-label/ESP";
       fsType = "vfat";
+      # ESP holds the systemd-boot random-seed and loader entries; keep it
+      # root-only (bootctl warns about a world-readable seed otherwise).
+      options = [ "fmask=0077" "dmask=0077" ];
     };
     "/mnt/host-share" = {
       device = "hostshare";

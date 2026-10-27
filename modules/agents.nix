@@ -249,9 +249,22 @@ in
       pkgs.bash
       pkgs.python3
     ];
+    # At cold boot (devhobby 10-17, 10-25) `daemon start` gives up after its
+    # ~10 s socket-readiness timeout while the VM is still busy booting
+    # ("app server did not become ready ... app-server-control.sock"); a
+    # manual start later always works. Nothing is missing ordering-wise — the
+    # socket is local — so retry after a pause instead of failing for good.
+    # A failed oneshot's cgroup is killed, so each retry starts clean.
+    unitConfig = {
+      StartLimitIntervalSec = 600;
+      StartLimitBurst = 5;
+    };
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
+      Restart = "on-failure";
+      RestartSec = 20;
+      TimeoutStartSec = 120;
     };
     script = ''
       managed="$HOME/.codex/packages/standalone/current/codex"

@@ -9,7 +9,7 @@
 # the raw read-write Bridge (:1143) is not reachable from this VM.
 #
 # DELIBERATELY no SMTP section: this VM never sends mail (the host drops the
-# Bridge SMTP port as well). ERPNext keeps its mailpit sink (192.168.40.15:1026).
+# Bridge SMTP port as well). ERPNext keeps its mailpit sink (192.168.40.28:1026).
 #
 # Plain IMAP on purpose: guest↔vmshim0 traffic stays inside the host kernel
 # (macvtap/macvlan bridge mode), and the stdlib proxy does not pass STARTTLS.

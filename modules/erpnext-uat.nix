@@ -191,7 +191,7 @@ let
           --install-app erpnext --set-default
         # Mail: everything the UAT site "sends" goes to the mailpit sink on
         # cdssrv02 (port 1026, NOT 1025 — 1025 there is Proton Bridge).
-        podman exec erpnext-uat-web bench --site "$SITE" set-config -g mail_server 192.168.40.15
+        podman exec erpnext-uat-web bench --site "$SITE" set-config -g mail_server 192.168.40.28
         podman exec erpnext-uat-web bench --site "$SITE" set-config -g mail_port 1026
         podman exec erpnext-uat-web bench --site "$SITE" set-config -g use_ssl 0
       }
@@ -208,7 +208,7 @@ let
           echo
           echo "ERPNext UAT up:  http://devpro:$P_UI/"
           echo "  Administrator / $(envget ERPNEXT_ADMIN_PASSWORD)"
-          echo "  mail → mailpit http://192.168.40.15:8025"
+          echo "  mail → mailpit http://192.168.40.28:8025"
           ;;
         down)
           podman stop -t 10 erpnext-uat-nginx erpnext-uat-scheduler erpnext-uat-worker \
@@ -242,7 +242,7 @@ let
         logs [c]  tail a container's log (default erpnext-uat-web)
         bench …   run bench against the UAT site, e.g. erpnext-uat bench migrate
 
-      UI http://devpro:$P_UI/   mail → mailpit 192.168.40.15:1026
+      UI http://devpro:$P_UI/   mail → mailpit 192.168.40.28:1026
       EOF
           ;;
       esac
