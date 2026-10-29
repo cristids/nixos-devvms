@@ -232,10 +232,14 @@ in
   systemd.user.services.codex-app-server = {
     description = "Paired Codex app-server daemon";
     wantedBy = [ "default.target" ];
-    # The daemon resolves and validates `bwrap` only when it starts. Restart it
-    # whenever either side of that relationship changes, otherwise a daemon
-    # kept alive across a system switch can retain the bundled fallback and
-    # continue surfacing the pre-upgrade "could not find bubblewrap" warning.
+    # The daemon may own live remote-control agents. Load updates during a
+    # switch, but defer replacing the running daemon until a deliberate restart
+    # or boot so an update cannot terminate active work.
+    restartIfChanged = false;
+    stopIfChanged = false;
+    # The daemon resolves and validates `bwrap` only when it starts. Mark either
+    # change as requiring a replacement, but restart it deliberately only after
+    # its live agents finish; the flags above defer switch-time replacement.
     restartTriggers = [ codexPinned bubblewrapPinned ];
     # The app-server daemon inherits this service-local PATH, not the login
     # shell's /run/current-system/sw/bin. Keep bwrap explicit so the managed
@@ -295,6 +299,12 @@ in
     description = "herdr headless server (agent workspace, UNIX socket)";
     documentation = [ "https://github.com/herdrdev/herdr" ];
     wantedBy = [ "default.target" ];
+
+    # A switch must not tear down panes containing agents/subagents. Herdr's
+    # normal Restart=on-failure still recovers an actual daemon crash and its
+    # persisted session restores agents; only switch-time restarts are skipped.
+    restartIfChanged = false;
+    stopIfChanged = false;
 
     preStart = ''
       install -d -m 0700 "$HOME/.config/herdr"

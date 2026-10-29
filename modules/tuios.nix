@@ -13,6 +13,12 @@
   systemd.user.services.tuios = {
     description = "tuios daemon (persistent terminal sessions)";
     wantedBy = [ "default.target" ];
+    # A NixOS switch must never interrupt panes that contain working agents or
+    # subagents. On 2026-10-29 the automatic devpro switch stopped this unit
+    # and systemd SIGKILLed three Codex processes in its cgroup. The new unit
+    # file is loaded now and takes effect on the next deliberate restart/boot.
+    restartIfChanged = false;
+    stopIfChanged = false;
     unitConfig.ConditionUser = "cristian";
     serviceConfig = {
       Type = "simple";
