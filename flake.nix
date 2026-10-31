@@ -35,7 +35,7 @@
     # protocol): same tag in all three, no nixpkgs follows, so upstream's own
     # pinned nixpkgs builds it and every host gets the identical store path.
     # Bumped in all three repos at once by lockstep-update-auto (cdssrv02).
-    tuios.url = "github:Gaurav-Gosain/tuios/v0.11.0";
+    tuios.url = "github:Gaurav-Gosain/tuios/v0.12.0";
 
     # Emacs 31 for the VMs, same two-piece recipe as nixos-laptops: emacs-overlay
     # gives `emacs-unstable-nox', and the emacs-31 release branch is swapped in as
@@ -64,7 +64,7 @@
     # rustPlatform via the overlay's callPackage, its own inputs are only
     # used for its CI cross-builds.
     # Pinned to a release tag in lockstep with cdssrv02 and nixos-laptops.
-    emacs-tramp-rpc.url = "github:ArthurHeymans/emacs-tramp-rpc/v0.15.0";
+    emacs-tramp-rpc.url = "github:ArthurHeymans/emacs-tramp-rpc/v0.16.0";
   };
 
   outputs = { self, nixpkgs, omp, herdr, tuios, emacs-overlay, emacs-31, emacs-tramp-rpc }:

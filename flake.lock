@@ -128,16 +128,16 @@
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1791303274,
-        "narHash": "sha256-ZqDzg1Pynklz6QMnEIpyy754iQoe1qGaSWRlrhxMG5k=",
+        "lastModified": 1793289176,
+        "narHash": "sha256-kmb0tolO3E/cXqvdzTUQFKPGgDXSO0uN+98RXvmMvBk=",
         "owner": "ArthurHeymans",
         "repo": "emacs-tramp-rpc",
-        "rev": "4c4682ed4b3002d528cb990545ca1479d58dde6d",
+        "rev": "543b3bf30b8a80b8cd0200c98d00f22a4e0220ac",
         "type": "github"
       },
       "original": {
         "owner": "ArthurHeymans",
-        "ref": "v0.15.0",
+        "ref": "v0.16.0",
         "repo": "emacs-tramp-rpc",
         "type": "github"
       }
@@ -650,16 +650,16 @@
         "treefmt-nix": "treefmt-nix_3"
       },
       "locked": {
-        "lastModified": 1792926175,
-        "narHash": "sha256-Ss8jYuaCkivmAzbwnlPciOtR9ftsy7wAg/mNxm/WsK0=",
+        "lastModified": 1793368780,
+        "narHash": "sha256-74V4F/xyDyWmJtmhIlpfSyAa0018SWw/dr2RsF4gGdM=",
         "owner": "Gaurav-Gosain",
         "repo": "tuios",
-        "rev": "3638a6f2093edfa7396b6233515786de4dbda683",
+        "rev": "789919466a01422cb26d93870e0fe86e719246c3",
         "type": "github"
       },
       "original": {
         "owner": "Gaurav-Gosain",
-        "ref": "v0.11.0",
+        "ref": "v0.12.0",
         "repo": "tuios",
         "type": "github"
       }
