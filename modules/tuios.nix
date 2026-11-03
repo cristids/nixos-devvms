@@ -1,5 +1,19 @@
 { tuiosPkg, ... }:
 
+let
+  # Memory cap for everything in the tuios cgroup (all panes: agents, tests,
+  # dev servers). On 2026-11-03 (17:21 and 17:28) a `node --test` run inside a
+  # pane, inspecting a cyclic fake DOM on an assertion failure, grew past 20 GB
+  # and drove the 31 GB VM into global OOM; systemd then stopped the whole unit
+  # (OOMPolicy=stop) and every pane died. With the cap the kernel OOM-kills the
+  # runaway inside this cgroup first, and OOMPolicy=continue keeps the daemon
+  # and the other panes alive. ~11 GB stay for the ERPNext benches (they run
+  # outside tuios, ~4-5 GB RAM) and the system. MemoryHigh starts reclaim
+  # well before the hard cap.
+  memoryHigh = "16G"; # reclaim/throttle above this
+  memoryMax = "20G"; # hard limit: cgroup-local OOM kill
+in
+
 # tuios — terminal multiplexer (the `tuios` flake input, same tag as
 # nixos_llm_srv and nixos-laptops: the link protocol is versioned). Its daemon runs as a lingering per-user service so
 # sessions survive the ssh login that started them. Since 0.8.5 other machines
@@ -28,6 +42,10 @@
       Restart = "on-failure";
       RestartSec = 5;
       KillMode = "mixed";
+      MemoryHigh = memoryHigh;
+      MemoryMax = memoryMax;
+      # An OOM kill of one pane process must not take down the daemon/panes.
+      OOMPolicy = "continue";
     };
     environment.TERM = "xterm-256color";
   };

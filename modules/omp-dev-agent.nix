@@ -45,6 +45,25 @@ let
     '';
   };
 
+  # Memory cap for test runs (2026-11-03): two global OOMs on devpro came from a
+  # `node --test` dumping a cyclic fake DOM on an assertion failure (>20 GB).
+  testMemoryMax = "6G";
+  testScopeCmd = "systemd-run --user --scope -p MemoryMax=${testMemoryMax} --";
+
+  # Appended (between markers) to ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md by
+  # omp-dev-integrations; the rest of those hand-edited files is left alone.
+  testMemoryRule = ''
+    # Test runs: memory cap
+
+    - Wrap every test run (and other potentially memory-hungry commands) in
+      `${testScopeCmd} <cmd>`, e.g.
+      `${testScopeCmd} node --test`. A runaway is then killed inside its own
+      scope instead of OOMing the VM and killing every tuios pane.
+    - Why: on 2026-11-03 two global OOMs came from a `node --test` dumping a
+      cyclic fake DOM on an assertion failure (>20 GB).
+    - `omp-task` already runs under such a scope; don't add one inside it.
+  '';
+
   taskRules = ''
     You are running non-interactively inside a sandbox as a delegated worker.
     - Work only inside the current project directory. Other files under $HOME do not exist here.
@@ -54,12 +73,26 @@ let
     - Do not ask questions: make reasonable assumptions, finish the task, then run the
       acceptance command from the task (if any) and fix until it passes.
     - End with a short report: files changed, acceptance command and its result.
+    - Run tests directly (no systemd-run): this whole run is already capped at
+      ${testMemoryMax} RAM, and a runaway test is OOM-killed.
   '';
 
   ompTask = pkgs.writeShellApplication {
     name = "omp-task";
     runtimeInputs = [ pkgs.coreutils pkgs.git pkgs.jq bubblewrap ];
     text = ''
+      # Memory cap for the whole run (omp + the tests it runs). The scope is
+      # created here, outside bwrap, because the sandbox has no user bus.
+      # OOMPolicy=continue: a killed test must not take omp down with it.
+      if [ -z "''${OMP_TASK_SCOPED:-}" ] && [ -S "''${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]; then
+        export OMP_TASK_SCOPED=1
+        exec ${config.systemd.package}/bin/systemd-run --user --scope --quiet --collect \
+          -p MemoryMax=${testMemoryMax} -p OOMPolicy=continue \
+          -- "$0" "$@"
+      elif [ -z "''${OMP_TASK_SCOPED:-}" ]; then
+        echo "omp-task: no user bus, running without the ${testMemoryMax} memory scope" >&2
+      fi
+
       usage() {
         cat >&2 <<'EOF'
       usage: omp-task [--cwd DIR] [--max-cost USD] [--model M] "spec"
@@ -320,6 +353,21 @@ let
         t["command"] = srv["command"]
         doc["mcp_servers"][name] = t
     write_if_changed(cfg_path, tomlkit.dumps(doc))
+
+    # Test-run memory rule: a marked block in the hand-edited instruction files.
+    BEGIN = "<!-- BEGIN nixos-devvms test-memory-cap (managed, edits are overwritten) -->"
+    END = "<!-- END nixos-devvms test-memory-cap -->"
+    block = BEGIN + "\n" + Path("${pkgs.writeText "test-memory-rule.md" testMemoryRule}").read_text().rstrip("\n") + "\n" + END + "\n"
+    for p in (home / ".claude" / "CLAUDE.md", codex / "AGENTS.md"):
+        p.parent.mkdir(exist_ok=True)
+        old = p.read_text() if p.exists() else ""
+        if BEGIN in old and END in old:
+            pre, rest = old.split(BEGIN, 1)
+            post = rest.split(END, 1)[1].lstrip("\n")
+            new = pre + block + post
+        else:
+            new = old + ("" if old.endswith("\n\n") or not old else ("\n" if old.endswith("\n") else "\n\n")) + block
+        write_if_changed(p, new, 0o644)
 
     # delegate-to-omp skill for Claude and Codex.
     skill = Path("${skillMd}").read_text()
