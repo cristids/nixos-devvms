@@ -201,10 +201,15 @@ in
 #
 #   ssh devhobby 'sudo install -m 600 /dev/stdin /var/lib/melious.key' <<< "sk-..."
 #
-# omp-models-seed renders ~cristian/.omp/agent/{models,config}.yml from it on boot —
-# only if models.yml is missing, so hand edits survive. Delete models.yml + restart
-# the service (or reboot) to re-render after a key rotation.
+# omp-models-seed renders ~cristian/.omp/agent/models.yml from it on every boot/switch
+# and whenever the key file changes (omp-models-seed-watch), so a key rotation is just
+# the install command above. config.yml (model roles) is create-once: hand edits
+# survive. Default model: melious/glm-5.3-flash (smol deepseek-v4.1-flash, slow glm-5.3).
 {
+  # omp-task sandbox, context7/ERPNext MCPs, delegate-to-omp skill.
+  imports = [ ./omp-dev-agent.nix ];
+  ompDevAgent.bubblewrap = bubblewrapPinned;
+
   # Three agents on purpose: omp (Melious-backed, per-VM key), claude-code and
   # codex (each an upstream account — the user runs `claude` / `codex` and
   # authenticates interactively; no credential is baked into the VM image).
@@ -368,6 +373,11 @@ in
     '';
   };
 
+  # models.yml is always re-rendered from the key file (it holds nothing hand-made:
+  # the key and the Melious model list). Hand edits belong in config.yml, which
+  # stays create-once. Costs are USD per 1M tokens and only feed omp's spend
+  # estimate (omp-task --max-cost); they are deliberately conservative (rounded
+  # up), so a cap trips early rather than late.
   systemd.services.omp-models-seed = {
     description = "Seed omp models.yml/config.yml from /var/lib/melious.key";
     wantedBy = [ "multi-user.target" ];
@@ -379,35 +389,59 @@ in
     script = ''
       dir=/home/cristian/.omp/agent
       key_file=/var/lib/melious.key
-      if [ -f "$dir/models.yml" ]; then
-        exit 0
-      fi
       if [ ! -f "$key_file" ]; then
-        echo "no $key_file yet — install the per-VM Melious key to enable omp (see modules/agents.nix)"
+        echo "no $key_file — models.yml left as is; install the per-VM Melious key to (re)enable omp (see modules/agents.nix)"
         exit 0
       fi
-      key=$(cat "$key_file")
-      mkdir -p "$dir"
-      cat > "$dir/models.yml" <<EOF
+      key=$(tr -d '[:space:]' < "$key_file")
+      install -d -o cristian -g users /home/cristian/.omp "$dir"
+      umask 077
+      cat > "$dir/models.yml.tmp" <<EOF
       providers:
         melious:
           baseUrl: https://api.melious.ai/v1
           api: openai-completions
-          apiKey: $key
+          apiKey: '$key'
           models:
-            - id: glm-5.2
-              contextWindow: 327680
-            - id: qwen3.6-35b-a3b
-              contextWindow: 262144
+            - id: glm-5.3-flash
+              contextWindow: 200000
+              maxTokens: 16384
+              cost: { input: 0.15, output: 0.50, cacheRead: 0.15, cacheWrite: 0 }
+            - id: deepseek-v4.1-flash
+              contextWindow: 200000
+              maxTokens: 16384
+              cost: { input: 0.35, output: 1.40, cacheRead: 0.35, cacheWrite: 0 }
+            - id: glm-5.3
+              contextWindow: 200000
+              maxTokens: 16384
+              cost: { input: 1.20, output: 4.00, cacheRead: 1.20, cacheWrite: 0 }
       EOF
-      if [ ! -f "$dir/config.yml" ]; then
-        cat > "$dir/config.yml" <<EOF
-      modelRoles:
-        default: melious/glm-5.2
-      EOF
+      chown cristian:users "$dir/models.yml.tmp"
+      mv -f "$dir/models.yml.tmp" "$dir/models.yml"
+
+      new_config='modelRoles:
+        default: melious/glm-5.3-flash
+        smol: melious/deepseek-v4.1-flash
+        slow: melious/glm-5.3'
+      # Migrate only the untouched old seed (default glm-5.2); keep hand edits.
+      old_config='modelRoles:
+        default: melious/glm-5.2'
+      if [ ! -f "$dir/config.yml" ] || [ "$(cat "$dir/config.yml")" = "$old_config" ]; then
+        umask 022
+        printf '%s\n' "$new_config" > "$dir/config.yml"
+        chown cristian:users "$dir/config.yml"
       fi
-      chown -R cristian:users /home/cristian/.omp
-      chmod 600 "$dir/models.yml"
     '';
+  };
+
+  # Re-seed as soon as a (new) key is installed, no reboot needed.
+  systemd.paths.omp-models-seed-watch = {
+    wantedBy = [ "multi-user.target" ];
+    pathConfig.PathChanged = "/var/lib/melious.key";
+  };
+  systemd.services.omp-models-seed-watch = {
+    description = "Re-run omp-models-seed after /var/lib/melious.key changed";
+    serviceConfig.Type = "oneshot";
+    script = "systemctl restart omp-models-seed.service";
   };
 }

@@ -98,10 +98,15 @@
         devhobby = mkVM "devhobby";
       };
 
-      # Exposed for hash-bump iteration: `nix build .#openspec`.
+      # Exposed for hash-bump iteration / tests: `nix build path:.#openspec`.
       packages.${system} = {
         openspec =
           nixpkgs.legacyPackages.${system}.callPackage ./pkgs/openspec { };
+        context7-mcp =
+          nixpkgs.legacyPackages.${system}.callPackage ./pkgs/context7-mcp { };
+        # Build runs the pytest suite: `nix build path:.#erpnext-mcp`.
+        erpnext-mcp =
+          nixpkgs.legacyPackages.${system}.callPackage ./modules/erpnext-mcp { };
       };
     };
 }

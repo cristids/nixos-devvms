@@ -34,4 +34,14 @@ and lands on the persistent `/home` / `/var` volumes.
   `~/.pi/agent/npm/` on first boot (`oh-my-pi-install.service`).
 - **Melious key** (per VM, user-installed once):
   `ssh devhobby 'sudo install -m 600 /dev/stdin /var/lib/melious.key' <<< "sk-..."`
-  `pi-models-seed.service` renders `~/.pi/agent/models.json` from it on next boot.
+  `omp-models-seed.service` renders `~/.omp/agent/models.yml` from it (re-runs by itself
+  when the key file changes). Default model `melious/glm-5.3-flash`.
+- **omp-task** (`modules/omp-dev-agent.nix`) — sandboxed one-shot omp run that Claude/Codex
+  delegate simple tasks to (skill `delegate-to-omp`):
+  `omp-task --cwd ~/development/<proj> "<spec>\nAcceptance: <cmd>"` (default cap 0.50 USD).
+  bwrap: RW only the project dir, `$HOME` is empty, `/var` hidden, `.git` read-only.
+- **MCPs** — `context7-mcp` (Nix-packaged, `pkgs/context7-mcp`) on both VMs; `erpnext-mcp`
+  (`modules/erpnext-mcp`, test :8000 / UAT :8001 only, no delete) on devpro. Wired into
+  `~/.codex/config.toml` and `~/development/erpnext/.mcp.json` by `omp-dev-integrations`.
+  ERPNext creds (user `mcp-dev`), devpro only:
+  `ssh devpro 'sudo install -m 600 -o cristian -g users /dev/stdin /var/lib/erpnext-mcp.env' <<< $'ERPNEXT_TEST_KEY=…\nERPNEXT_TEST_SECRET=…\nERPNEXT_UAT_KEY=…\nERPNEXT_UAT_SECRET=…'`

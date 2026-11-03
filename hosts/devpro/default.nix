@@ -14,6 +14,10 @@
 
   networking.hostName = "devpro";
 
+  # ERPNext MCP for Claude/Codex/omp, test :8000 + UAT :8001 benches only
+  # (../../modules/omp-dev-agent.nix). Creds: /var/lib/erpnext-mcp.env.
+  ompDevAgent.erpnext.enable = true;
+
   # No Codex Remote Control on devpro (2026-10-01): it needs OpenAI's standalone
   # install under ~/.codex/packages, which shadowed the Nix codex on PATH. The
   # Nix codex (pinned in ../../modules/agents.nix) is the only one here.
