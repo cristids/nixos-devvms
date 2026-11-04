@@ -121,10 +121,24 @@ let
   planModel = "melious/glm-5.3";
   implModel = "melious/glm-5.3-flash";
 
+  # `omp-task --best-of N`: N independent attempts on snapshot copies, judged by
+  # the wrapper running the success criterion (2026-11-04). See the .py header.
+  ompBestOf = pkgs.writers.writePython3 "omp-best-of" { flakeIgnore = [ "E501" ]; }
+    (builtins.readFile ./omp-best-of.py);
+
   ompTask = pkgs.writeShellApplication {
     name = "omp-task";
     runtimeInputs = [ pkgs.coreutils pkgs.git pkgs.jq bubblewrap ];
     text = ''
+      # --best-of: the wrapper calls omp-task once per attempt (each gets its own
+      # scope below), so it dispatches before the scope re-exec.
+      for a in "$@"; do
+        case "$a" in
+          --best-of|--best-of=*) exec ${ompBestOf} "$@" ;;
+          --exec|--) break ;;
+        esac
+      done
+
       # Memory cap for the whole run (omp + the tests it runs). The scope is
       # created here, outside bwrap, because the sandbox has no user bus.
       # OOMPolicy=continue: a killed test must not take omp down with it.
@@ -141,6 +155,9 @@ let
         cat >&2 <<'EOF'
       usage: omp-task [--cwd DIR] [--quick] [--max-cost USD] [--model M] "brief"
              omp-task [--cwd DIR] --exec CMD [ARGS...]   (run CMD in the same sandbox; for checks)
+             omp-task --best-of N [--check CMD] [--parallel P] [--check-timeout S] [--quick] "brief"
+                      (N=2..5 attempts on snapshot copies; the passing one with the smallest
+                      diff is applied uncommitted; see `omp-task --best-of 2 --help`)
 
       Runs omp (Melious) once, non-interactively, sandboxed (bwrap): read-write only DIR
       (default: current dir; must be inside ~/development or ~/scratch), no ~/.ssh,
@@ -373,7 +390,9 @@ let
     - NixOS / deploy / production config, anything on prod data
     - security-sensitive code (auth, secrets, permissions)
 
-    ## Brief (always this format)
+    ## Workflow
+    You write the spec and split it into small tasks, each with a command that
+    proves it is done. One brief per task (always this format):
     ```
     Goal: <what to build or change, one paragraph>
     Success criterion: <command that must pass>
@@ -381,27 +400,37 @@ let
     Out of scope: <what must not change>
     ```
 
-    ## Run
+    ## Run (default: best of 3)
     ```sh
-    omp-task --cwd <project dir under ~/development or ~/scratch> "<brief>"
+    omp-task --cwd <dir> --quick --best-of 3 --check "<cmd>" "<brief>"
     ```
-    - default = plan mode: GLM 5.3 plans read-only, then GLM 5.3 Flash implements;
-      cap 1.00 USD. Use for anything beyond a one-spot edit.
-    - `--quick`: Flash only, no plan phase; cap 0.50 USD. Trivial edits only.
-    - `--model M` sets the implementer; `--max-cost USD` overrides the cap.
+    - 3 independent Flash attempts on copies of the current tree (uncommitted and
+      untracked files included); omp-task itself runs the check on each. Touching
+      a file outside "Allowed files" disqualifies an attempt. The passing attempt
+      with the smallest diff (then fewest files, then lowest cost) is applied
+      uncommitted, only if your tree did not change meanwhile; otherwise it prints
+      the patch path. Nothing passes → nothing applied, patches kept.
+    - Cap = N × 0.50 USD (printed upfront). `--parallel P` (default 2, max 3),
+      `--check-timeout S` (default 600). Without `--check` the brief's
+      "Success criterion:" line is used.
+    - Plan mode (single attempt, GLM 5.3 plans, Flash implements, cap 1.00 USD):
+      `omp-task --cwd <dir> "<brief>"`, only when the approach needs reading lots
+      of code. `--model M`, `--max-cost USD` as usual.
 
-    The output ends with omp's report (with its assumptions), spend per model,
-    `git diff --stat` and untracked files.
+    The output has a table (attempt | pass | +/- | files | cost | note), the
+    winner's report, `git diff --stat` and the total cost. Run dirs:
+    ~/scratch/.omp-bon/ (kept 7 days).
 
     ## Then, yourself, before accepting
-    1. Run the success criterion yourself.
+    1. Rerun the success criterion yourself.
     2. Review `git -C <dir> diff` and the untracked files: only allowed files, nothing
        extra. Read omp's assumptions. omp output is not trusted.
     3. Fix or discard (`git checkout -- <files>`), and commit only when it is right.
 
     Never let omp commit or push (the sandbox makes .git read-only and omp-task warns
     if HEAD moved, exit 4). Exit 3 means the spend cap was reached; narrow the brief
-    instead of raising the cap.
+    instead of raising the cap. Best-of exits: 1 = no attempt passed, 6 = winner not
+    applied (tree changed); apply the printed patch with `git apply` after review.
   '';
 
   integrationsScript = pkgs.writers.writePython3 "omp-dev-integrations"
