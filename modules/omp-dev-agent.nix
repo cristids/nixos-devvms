@@ -11,8 +11,13 @@
 #                        `git diff --stat`; warns if HEAD moved.
 #   context7-mcp         Context7 docs MCP, Nix-packaged (../pkgs/context7-mcp), run
 #                        locally over stdio. Optional key: /var/lib/context7.key.
-#   erpnext-mcp          our own stdio MCP for the devpro benches (./erpnext-mcp),
-#                        test :8000 / UAT :8001 only, no delete. devpro only.
+#   erpnext-mcp          our own stdio MCP for the devpro dev benches (./erpnext-mcp):
+#                        bench -> port -> sites discovered from
+#                        ~/development/erpnext/benches (test, test1-6, uat, ...),
+#                        127.0.0.1:<bench port> + Host <bench site> only, no delete,
+#                        uat read-only. devpro only.
+#   erpnext-mcp-provision  user oneshot (on demand, not at boot): API user
+#                        mcp-dev@mcp.localhost + keys on every served site.
 #   omp-dev-integrations user service: MCPs into ~/.codex/config.toml and
 #                        ~/development/erpnext/.mcp.json (Claude + omp), the
 #                        `delegate-to-omp` skill for Claude and Codex, and the global
@@ -20,9 +25,12 @@
 #
 # Secrets (never in the store/repo): /var/lib/melious.key (omp-models-seed in
 # agents.nix renders ~/.omp/agent/models.yml from it) and, on devpro,
-# /var/lib/erpnext-mcp.env owned by cristian, mode 0600:
-#   ERPNEXT_TEST_KEY=…  ERPNEXT_TEST_SECRET=…  ERPNEXT_UAT_KEY=…  ERPNEXT_UAT_SECRET=…
-# (API key/secret of the `mcp-dev` user on test.localhost / uat.localhost).
+# /var/lib/erpnext-mcp/credentials.json (dir 0700, file 0600, owned by cristian):
+#   {"<site>": {"key": …, "secret": …, …}}, written by
+#   `systemctl --user start erpnext-mcp-provision` (idempotent: reuses existing users
+#   and keys, picks up new benches/sites; re-run after `testenv.sh refresh`).
+#   Roles: System Manager on test/testN sites; read-oriented "* User" roles on uat
+#   (UAT is a restore of production data and the user's acceptance environment).
 let
   cfg = config.ompDevAgent;
   home = "/home/cristian";
@@ -199,20 +207,29 @@ let
       # MCP servers for the sandboxed omp (user-level omp config, which outranks
       # project .mcp.json files). /var stays hidden: the ERPNext credentials are read
       # here, OUTSIDE the sandbox, and a private copy is bound read-only where only the
-      # erpnext MCP is pointed at it (ERPNEXT_MCP_ENV_FILE in its `env`, not in the
+      # erpnext MCP is pointed at it (ERPNEXT_MCP_CREDENTIALS in its `env`, not in the
       # agent's environment). omp runs its stdio servers as the same user in the same
-      # sandbox, so the agent could still read that copy — tradeoff accepted: test/UAT
-      # mcp-dev creds only, never prod, never the Melious key file.
-      erp_copy=""
-      if ${lib.boolToString cfg.erpnext.enable} && [ -r /var/lib/erpnext-mcp.env ]; then
-        install -m 600 /var/lib/erpnext-mcp.env "$stage/erpnext-mcp.env"
-        erp_copy=$agent/erpnext-mcp.env
+      # sandbox, so the agent could still read that copy — tradeoff accepted: dev-bench
+      # mcp-dev creds only (uat read-oriented), never prod, never the Melious key file.
+      # The benches dir is not in the sandbox (site_config.json holds DB passwords), so
+      # the environment map is discovered here too and passed in as JSON (no secrets).
+      erp_creds=/nonexistent
+      erp_map=/nonexistent
+      if ${lib.boolToString cfg.erpnext.enable}; then
+        if [ -r /var/lib/erpnext-mcp/credentials.json ]; then
+          install -m 600 /var/lib/erpnext-mcp/credentials.json "$stage/erpnext-credentials.json"
+          erp_creds=$agent/erpnext-credentials.json
+        fi
+        if ${erpnextMcp}/bin/erpnext-mcp --dump-env-map > "$stage/erpnext-env-map.json"; then
+          erp_map=$agent/erpnext-env-map.json
+        fi
       fi
-      jq -n --arg sw "${sw}" --arg envf "''${erp_copy:-/nonexistent}" \
+      jq -n --arg sw "${sw}" --arg creds "$erp_creds" --arg map "$erp_map" \
         --argjson withErp ${lib.boolToString cfg.erpnext.enable} '
         {mcpServers: ({context7: {type: "stdio", command: ($sw + "/context7-mcp")}}
           + (if $withErp then {erpnext: {type: "stdio", command: ($sw + "/erpnext-mcp"),
-                                         env: {ERPNEXT_MCP_ENV_FILE: $envf}}}
+                                         env: {ERPNEXT_MCP_CREDENTIALS: $creds,
+                                               ERPNEXT_MCP_ENV_MAP: $map}}}
              else {} end))}' > "$stage/mcp.json"
       chmod 600 "$stage/mcp.json"
 
@@ -232,8 +249,11 @@ let
         --dir "$agent"
         --ro-bind "$stage/mcp.json" "$agent/mcp.json"
       )
-      if [ -n "$erp_copy" ]; then
-        args+=(--ro-bind "$stage/erpnext-mcp.env" "$erp_copy")
+      if [ "$erp_creds" != /nonexistent ]; then
+        args+=(--ro-bind "$stage/erpnext-credentials.json" "$erp_creds")
+      fi
+      if [ "$erp_map" != /nonexistent ]; then
+        args+=(--ro-bind "$stage/erpnext-env-map.json" "$erp_map")
       fi
       # `nix develop` / `nix shell` for project toolchains go through the daemon.
       if [ -S /nix/var/nix/daemon-socket/socket ]; then
@@ -334,7 +354,9 @@ let
     `omp-task` runs omp once, non-interactively, inside a bwrap sandbox: it can write
     only the project directory you give it, sees no ~/.ssh, ~/.codex, ~/.claude, gh
     auth or other projects, and stops at a spend cap. It has the context7 (library
-    docs) MCP and, on devpro, the ERPNext test/UAT MCP. omp follows global coding
+    docs) MCP and, on devpro, the ERPNext dev-bench MCP (`erpnext`; name the site in the
+    brief, e.g. "use site test3", or pass --cwd inside that bench: default site = the
+    bench of the cwd; uat is read-only). omp follows global coding
     rules (assumptions stated, minimal and surgical changes, loop until the success
     criterion passes) from ~/.omp/agent/AGENTS.md.
 
@@ -495,7 +517,20 @@ in
     environment.systemPackages = [ ompTask context7Mcp ]
       ++ lib.optional cfg.erpnext.enable erpnextMcp;
 
-    systemd.tmpfiles.rules = [ "d ${home}/scratch 0755 cristian users -" ];
+    systemd.tmpfiles.rules = [ "d ${home}/scratch 0755 cristian users -" ]
+      ++ lib.optional cfg.erpnext.enable "d /var/lib/erpnext-mcp 0700 cristian users -";
+
+    # On demand only (`systemctl --user start erpnext-mcp-provision`): one bench python
+    # start per site, and it writes to every site DB — not something for each boot.
+    systemd.user.services.erpnext-mcp-provision = lib.mkIf cfg.erpnext.enable {
+      description = "ERPNext MCP: API user + keys on every served dev bench site";
+      path = [ "/run/current-system/sw" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${erpnextMcp}/bin/erpnext-mcp-provision";
+        TimeoutStartSec = "30min";
+      };
+    };
 
     systemd.user.services.omp-dev-integrations = {
       description = "Wire context7/ERPNext MCPs and the delegate-to-omp skill into Claude, Codex, omp";

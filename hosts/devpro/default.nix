@@ -14,8 +14,9 @@
 
   networking.hostName = "devpro";
 
-  # ERPNext MCP for Claude/Codex/omp, test :8000 + UAT :8001 benches only
-  # (../../modules/omp-dev-agent.nix). Creds: /var/lib/erpnext-mcp.env.
+  # ERPNext MCP for Claude/Codex/omp, every served bench under ~/development/erpnext/benches
+  # (../../modules/omp-dev-agent.nix). Creds: /var/lib/erpnext-mcp/credentials.json via
+  # `systemctl --user start erpnext-mcp-provision`.
   ompDevAgent.erpnext.enable = true;
 
   # No Codex Remote Control on devpro (2026-10-01): it needs OpenAI's standalone
