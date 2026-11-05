@@ -29,15 +29,16 @@ and lands on the persistent `/home` / `/var` volumes.
 - **emacs** — `emacs30-nox` with all tree-sitter grammars baked in + LSPs/toolchain
   (`modules/emacs.nix`). Personal distro configs: clone manually after `gh auth login`.
 - **devenv + direnv/nix-direnv, gh, uv, python** — `modules/dev-tooling.nix`.
-- **pi + oh-my-pi** — `modules/agents.nix`. pi is nix-packaged (`pkgs/pi-coding-agent`,
-  FOD; bump = version + 2 hashes). oh-my-pi self-installs as a pi extension into
-  `~/.pi/agent/npm/` on first boot (`oh-my-pi-install.service`).
+- **Pi + local Qwen** — `modules/pi-dev-agent.nix` on devpro. Pi is Nix-packaged
+  (`pkgs/pi-coding-agent`) and defaults to `strata/qwen3.8-flash` through the local
+  llama-swap endpoint. It has Context7, ERPNext and a session-scoped read-only TUIOS
+  MCP. TUIOS installs its Pi plugin as well as Claude/Codex hooks and MCP entries.
 - **Melious key** (per VM, user-installed once):
   `ssh devhobby 'sudo install -m 600 /dev/stdin /var/lib/melious.key' <<< "sk-..."`
   `omp-models-seed.service` renders `~/.omp/agent/models.yml` from it (re-runs by itself
   when the key file changes). Default model `melious/glm-5.3-flash`.
-- **omp-task** (`modules/omp-dev-agent.nix`) — sandboxed one-shot omp run that Claude/Codex
-  delegate simple tasks to (skill `delegate-to-omp`):
+- **omp-task** (`modules/omp-dev-agent.nix`, devhobby only) — retained for bake-off
+  reproducibility. It is disabled on devpro, where Pi replaced the Melious-backed path:
   `omp-task --cwd ~/development/<proj> "<spec>\nAcceptance: <cmd>"` (default cap 0.50 USD).
   bwrap: RW only the project dir, `$HOME` is empty, `/var` hidden, `.git` read-only.
 - **Bake-off harness, devhobby only** (`modules/bakeoff`, 2026-11-05): pi 1.5.0 + taskplane

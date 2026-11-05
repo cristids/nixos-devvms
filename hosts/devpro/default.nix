@@ -17,7 +17,20 @@
   # ERPNext MCP for Claude/Codex/omp, every served bench under ~/development/erpnext/benches
   # (../../modules/omp-dev-agent.nix). Creds: /var/lib/erpnext-mcp/credentials.json via
   # `systemctl --user start erpnext-mcp-provision`.
-  ompDevAgent.erpnext.enable = true;
+  ompDevAgent = {
+    # Retire the Melious-backed OMP execution path on devpro. The module still
+    # supplies the shared MCP binaries used by Pi, Claude and Codex.
+    omp.enable = false;
+    erpnext.enable = true;
+  };
+
+  # Production pilot: Pi executes bounded OpenSpec work packages with local
+  # Qwen. Claude/Codex retain the lead/review role. MCPs: context7, ERPNext and
+  # session-scoped read-only tuios coordination.
+  piDevAgent = {
+    enable = true;
+    erpnext.enable = true;
+  };
 
   # No Codex Remote Control on devpro (2026-10-01): it needs OpenAI's standalone
   # install under ~/.codex/packages, which shadowed the Nix codex on PATH. The

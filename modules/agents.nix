@@ -1,4 +1,4 @@
-{ pkgs, ompPkg, herdrPkg, ... }:
+{ config, lib, pkgs, ompPkg, herdrPkg, ... }:
 
 let
   openspec = pkgs.callPackage ../pkgs/openspec { };
@@ -206,15 +206,14 @@ in
 # the install command above. config.yml (model roles) is create-once: hand edits
 # survive. Default model: melious/glm-5.3-flash (smol deepseek-v4.1-flash, slow glm-5.3).
 {
-  # omp-task sandbox, context7/ERPNext MCPs, delegate-to-omp skill.
-  imports = [ ./omp-dev-agent.nix ];
+  # Sandboxed worker integrations. Pi is the production local-Qwen path on
+  # devpro; OMP remains available only where explicitly enabled (devhobby).
+  imports = [ ./omp-dev-agent.nix ./pi-dev-agent.nix ];
   ompDevAgent.bubblewrap = bubblewrapPinned;
 
-  # Three agents on purpose: omp (Melious-backed, per-VM key), claude-code and
-  # codex (each an upstream account — the user runs `claude` / `codex` and
-  # authenticates interactively; no credential is baked into the VM image).
-  environment.systemPackages = [
-    ompPkg
+  # Claude Code and Codex use upstream accounts. OMP is optional per host;
+  # devpro disables it in favour of local-Qwen Pi.
+  environment.systemPackages = (lib.optional config.ompDevAgent.omp.enable ompPkg) ++ [
     openspec
     claudeCodePinned
     codexPinned
@@ -366,7 +365,7 @@ in
 
       # Still tolerate a refusal rather than failing the unit: upstream may add
       # further preconditions, and a missing hook must not block the others.
-      for agent in omp claude codex; do
+      for agent in ${lib.optionalString config.ompDevAgent.omp.enable "omp "}claude codex; do
         herdr integration install "$agent" || \
           echo "herdr: $agent integration not installed (run $agent once, then: systemctl --user restart herdr-integrations)"
       done
@@ -378,7 +377,7 @@ in
   # stays create-once. Costs are USD per 1M tokens and only feed omp's spend
   # estimate (omp-task --max-cost); they are deliberately conservative (rounded
   # up), so a cap trips early rather than late.
-  systemd.services.omp-models-seed = {
+  systemd.services.omp-models-seed = lib.mkIf config.ompDevAgent.omp.enable {
     description = "Seed omp models.yml/config.yml from /var/lib/melious.key";
     wantedBy = [ "multi-user.target" ];
     after = [ "local-fs.target" ];
@@ -435,11 +434,11 @@ in
   };
 
   # Re-seed as soon as a (new) key is installed, no reboot needed.
-  systemd.paths.omp-models-seed-watch = {
+  systemd.paths.omp-models-seed-watch = lib.mkIf config.ompDevAgent.omp.enable {
     wantedBy = [ "multi-user.target" ];
     pathConfig.PathChanged = "/var/lib/melious.key";
   };
-  systemd.services.omp-models-seed-watch = {
+  systemd.services.omp-models-seed-watch = lib.mkIf config.ompDevAgent.omp.enable {
     description = "Re-run omp-models-seed after /var/lib/melious.key changed";
     serviceConfig.Type = "oneshot";
     script = "systemctl restart omp-models-seed.service";

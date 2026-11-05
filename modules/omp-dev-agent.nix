@@ -523,18 +523,34 @@ let
         "${pkgs.writeText "omp-global-rules.md" ompGlobalRules}",
     )
 
-    # delegate-to-omp skill for Claude and Codex.
+    # delegate-to-omp skill for Claude and Codex. Removing OMP from a host also
+    # removes only the exact managed skill; hand-written replacements are kept.
     skill = Path("${skillMd}").read_text()
+    with_omp = sys.argv[2] == "1"
     for base in (home / ".claude" / "skills", codex / "skills"):
         d = base / "delegate-to-omp"
-        d.mkdir(parents=True, exist_ok=True)
-        write_if_changed(d / "SKILL.md", skill, 0o644)
+        p = d / "SKILL.md"
+        if with_omp:
+            d.mkdir(parents=True, exist_ok=True)
+            write_if_changed(p, skill, 0o644)
+        elif p.exists() and p.read_text() == skill:
+            p.unlink()
+            try:
+                d.rmdir()
+            except OSError:
+                pass
+            print(f"removed {p}")
   '';
 
   bubblewrap = config.ompDevAgent.bubblewrap;
 in
 {
   options.ompDevAgent = {
+    omp.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Install the Melious-backed OMP agent and delegation wrapper.";
+    };
     erpnext.enable = lib.mkEnableOption "the ERPNext MCP (devpro benches)";
     bubblewrap = lib.mkOption {
       type = lib.types.package;
@@ -543,7 +559,7 @@ in
   };
 
   config = {
-    environment.systemPackages = [ ompTask context7Mcp ]
+    environment.systemPackages = (lib.optional cfg.omp.enable ompTask) ++ [ context7Mcp ]
       ++ lib.optional cfg.erpnext.enable erpnextMcp;
 
     systemd.tmpfiles.rules = [ "d ${home}/scratch 0755 cristian users -" ]
@@ -567,7 +583,7 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = "${integrationsScript} ${if cfg.erpnext.enable then "1" else "0"}";
+        ExecStart = "${integrationsScript} ${if cfg.erpnext.enable then "1" else "0"} ${if cfg.omp.enable then "1" else "0"}";
       };
     };
   };
