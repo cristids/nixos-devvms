@@ -50,7 +50,10 @@ in
     environment.TERM = "xterm-256color";
   };
 
-  # Agent integrations for Claude Code, Codex and Pi: pane state + tuios skill.
+  # Agent integrations for Claude Code and Codex: pane state, tuios skill and
+  # their MCP registration. Pi does not support `integration install --mcp`;
+  # modules/pi-dev-agent.nix installs its native plugin after Pi config exists,
+  # while that module's declarative mcp.json registers the read-only server.
   # The settings files are mutable, so `tuios integration install` merges its
   # version-marked entries in at every activation (no-op when current). Same
   # block as nixos_llm_srv modules/services/tuios-server.nix.
@@ -59,7 +62,7 @@ in
   # trust new hooks.
   system.userActivationScripts.tuiosIntegrations = ''
     if [ "$(id -un)" = cristian ]; then
-      ${tuiosPkg}/bin/tuios integration install claude-code codex pi --mcp \
+      ${tuiosPkg}/bin/tuios integration install claude-code codex --mcp \
         || echo "tuios integration install failed (non-fatal)" >&2
     fi
   '';
