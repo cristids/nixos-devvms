@@ -29,11 +29,15 @@ and lands on the persistent `/home` / `/var` volumes.
 - **emacs** — `emacs30-nox` with all tree-sitter grammars baked in + LSPs/toolchain
   (`modules/emacs.nix`). Personal distro configs: clone manually after `gh auth login`.
 - **devenv + direnv/nix-direnv, gh, uv, python** — `modules/dev-tooling.nix`.
-- **Pi + local Qwen** — `modules/pi-dev-agent.nix` on devpro. Pi is Nix-packaged
-  (`pkgs/pi-coding-agent`) and defaults to `strata/qwen3.8-flash` through the local
-  llama-swap endpoint. It has Context7, ERPNext and a session-scoped read-only TUIOS
-  MCP. TUIOS installs its Pi plugin as well as Claude/Codex hooks and MCP entries.
-  Production implementation goes through one bounded slice at a time:
+- **Pi production worker pool** — `modules/pi-dev-agent.nix` on devpro. Pi is
+  Nix-packaged (`pkgs/pi-coding-agent`) and exposes exactly two allowlisted models:
+  local `strata/qwen3.8-flash` (default, one global lane) and the bake-off-verified
+  Melious `deepseek-v4.1-flash-1017`. Every batch includes exactly one local lane;
+  explicitly approved external lanes use persistent live cap/worker controls and
+  stable worker IDs, with each worker in its own TUIOS worktree.
+  It has Context7, exclusive test-bench ERPNext, and session-scoped read-only TUIOS
+  MCPs. Full policy and reviewer workflow: [docs/pi-task-production.md](docs/pi-task-production.md).
+  A single local implementation slice looks like:
   `pi-task --cwd ~/development/project --allow src/file.py --allow tests/test_file.py --success 'pytest -q tests/test_file.py' 'Implement the approved OpenSpec slice'`.
   The wrapper requires an exact file allowlist and success command, caps the whole run
   at 6 GiB, exposes only the project in a minimal-home bubblewrap sandbox (`.git` is
