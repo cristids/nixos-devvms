@@ -10,7 +10,7 @@
 #   bakeoff-proxy      127.0.0.1:5099, the ONLY path to models: injects the Melious key (LoadCredential,
 #                      agents never see it), records every call (raw JSONL + summary), classifies
 #                      outcomes, clamps max output tokens to 32768, retries 429s, serializes the
-#                      single-stream local Qwen Flash, enforces the 200-credit total Melious cap
+#                      single-stream local Qwen Flash, enforces the 350-credit total Melious cap
 #                      (no new runs past it) and per-run spend/turn caps. ./proxy.py
 #   pi-models-seed     user oneshot: ~/.pi/agent/{models,settings,mcp}.json for interactive pi via
 #                      the proxy (run id "interactive"); providers melious + homelab.
@@ -244,7 +244,7 @@ in
     wants = [ "network-online.target" ];
     environment = {
       BAKEOFF_ROOT = "${home}/bakeoff";
-      BAKEOFF_SPEND_CAP = "200";
+      BAKEOFF_SPEND_CAP = "350";
       BAKEOFF_MAX_TOKENS = "32768";
       BAKEOFF_HOMELAB_URL = "http://192.168.40.28:9000";
       BAKEOFF_WEBMCP_URL = "http://192.168.40.28:9542";
