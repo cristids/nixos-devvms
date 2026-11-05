@@ -318,7 +318,8 @@ def main(argv: list[str] | None = None) -> int:
                 return EXIT_POLICY
             test_rc: int | None = None
             if pi_rc == 0:
-                test_rc = run(sb + ["--", "/bin/bash", "-lc", args.success]).returncode
+                test_rc = run(sb + ["--", "/run/current-system/sw/bin/bash", "-lc",
+                                    args.success]).returncode
                 problems = policy_violations(before, snapshot(repo), allowed)
                 if problems:
                     for problem in problems:
