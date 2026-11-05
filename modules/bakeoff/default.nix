@@ -209,6 +209,8 @@ in
   environment.systemPackages = [
     piPkg dshPkg benchShim bakeoffBench repoAt (runner "pi") (runner "dsh")
     mariadb pkgs.redis pkgs.jq pkgs.curl pkgs.git pkgs.python3 pkgs.nodejs pkgs.yarn
+    # Frappe's get_pdf (pdfkit) needs it; roster mail tests attach real PDFs (H9, 11-05).
+    pkgs.wkhtmltopdf
   ];
 
   services.mysql = {
