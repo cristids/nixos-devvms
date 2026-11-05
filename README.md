@@ -33,6 +33,13 @@ and lands on the persistent `/home` / `/var` volumes.
   (`pkgs/pi-coding-agent`) and defaults to `strata/qwen3.8-flash` through the local
   llama-swap endpoint. It has Context7, ERPNext and a session-scoped read-only TUIOS
   MCP. TUIOS installs its Pi plugin as well as Claude/Codex hooks and MCP entries.
+  Production implementation goes through one bounded slice at a time:
+  `pi-task --cwd ~/development/project --allow src/file.py --allow tests/test_file.py --success 'pytest -q tests/test_file.py' 'Implement the approved OpenSpec slice'`.
+  The wrapper requires an exact file allowlist and success command, caps the whole run
+  at 6 GiB, exposes only the project in a minimal-home bubblewrap sandbox (`.git` is
+  read-only and `/var` is empty), and refuses HEAD/index movement or any changed
+  Git-visible path outside the allowlist. Pi never commits; the wrapper reports both
+  command statuses and the final diff stat.
 - **Melious key** (per VM, user-installed once):
   `ssh devhobby 'sudo install -m 600 /dev/stdin /var/lib/melious.key' <<< "sk-..."`
   `omp-models-seed.service` renders `~/.omp/agent/models.yml` from it (re-runs by itself

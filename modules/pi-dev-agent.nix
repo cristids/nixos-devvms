@@ -9,6 +9,20 @@ let
   sw = "/run/current-system/sw/bin";
   piPkg = pkgs.callPackage ../pkgs/pi-coding-agent { };
 
+  piTask = pkgs.runCommand "pi-task" {
+    nativeBuildInputs = [ pkgs.makeWrapper pkgs.python3 pkgs.git ];
+  } ''
+    cp ${./pi-task.py} pi-task.py
+    cp ${./test_pi_task.py} test_pi_task.py
+    ${pkgs.python3}/bin/python3 -m unittest -v test_pi_task.py
+    install -Dm755 pi-task.py $out/libexec/pi-task.py
+    makeWrapper ${pkgs.python3}/bin/python3 $out/bin/pi-task \
+      --add-flags $out/libexec/pi-task.py \
+      --prefix PATH : ${lib.makeBinPath [
+        pkgs.bash config.ompDevAgent.bubblewrap pkgs.coreutils pkgs.git pkgs.systemd piPkg
+      ]}
+  '';
+
   models = pkgs.writeText "pi-local-qwen-models.json" (builtins.toJSON {
     providers.homelab = {
       name = "Homelab llama-swap";
@@ -74,7 +88,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = [ piPkg ];
+    environment.systemPackages = [ piPkg piTask ];
 
     # These files contain no credentials. Keep auth.json and conversation state
     # untouched; only the declarative provider/settings/MCP files are replaced.
