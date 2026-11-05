@@ -11,7 +11,7 @@ let
   productionBenches = [ "test" "test1" "test2" "test3" "test4" "test5" "test6" "test7" ];
 
   piTask = pkgs.runCommand "pi-task" {
-    nativeBuildInputs = [ pkgs.makeWrapper pkgs.python3 pkgs.git ];
+    nativeBuildInputs = [ pkgs.makeWrapper pkgs.python3 pkgs.git config.ompDevAgent.bubblewrap ];
   } ''
     cp ${./pi-task.py} pi-task.py
     cp ${./test_pi_task.py} test_pi_task.py

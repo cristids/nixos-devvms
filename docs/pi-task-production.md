@@ -98,16 +98,19 @@ sites are never allocatable.
 ## Guardrails and failures
 
 Every run retains the 6 GiB scope, mandatory success command, exact write
-allowlist, read-only normal-clone or linked-worktree Git metadata, HEAD/index
-and concurrent-tree guards, minimal HOME, empty `/var`, Context7, optional
+allowlist, HEAD/index and concurrent-tree guards, minimal HOME, empty `/var`, Context7, optional
 bench-scoped ERPNext, and session-scoped read-only TUIOS MCP access. Provider,
 credential, model, control, worktree, bench, scope, and test failures name their
 cause and never fall back.
 
 DSF sees a staged view containing only `--allow` plus reviewer-approved `--read`
-paths. Never approve production credentials, production data, secrets, or
-unrelated repository content in those paths, the brief, or test output. The
-success command runs locally only after external inference ends.
+paths and no original `.git`, common gitdir, objects, refs, config, alternates,
+linked-worktree metadata, or history. Nested `.git` directories and symlinks are
+refused while staging. Local Qwen may see the original normal-clone or linked-
+worktree Git metadata read-only. The success command runs locally with read-only
+original Git only after external inference ends. Never approve production
+credentials, production data, secrets, or unrelated repository content in
+external paths, the brief, or test output.
 
 After three unsuccessful attempts on one slice, stop delegating and take over
 at the frontier layer. Append the classified failure to

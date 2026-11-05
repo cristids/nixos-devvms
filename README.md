@@ -40,8 +40,10 @@ and lands on the persistent `/home` / `/var` volumes.
   A single local implementation slice looks like:
   `pi-task --cwd ~/development/project --allow src/file.py --allow tests/test_file.py --success 'pytest -q tests/test_file.py' 'Implement the approved OpenSpec slice'`.
   The wrapper requires an exact file allowlist and success command, caps the whole run
-  at 6 GiB, exposes only the project in a minimal-home bubblewrap sandbox (`.git` is
-  read-only and `/var` is empty), and refuses HEAD/index movement or any changed
+  at 6 GiB, and uses a minimal-home bubblewrap sandbox (`/var` is empty). Local Qwen
+  and the post-inference success check see `.git` read-only; external DSF inference
+  sees only approved staged files and no Git metadata, objects, refs, config, or history.
+  The wrapper refuses HEAD/index movement or any changed
   Git-visible path outside the allowlist. Pi never commits; the wrapper reports both
   command statuses and the final diff stat.
 - **Melious key** (per VM, user-installed once):

@@ -91,6 +91,22 @@ def git_mount_args(layout: GitLayout) -> list[str]:
     return args
 
 
+def project_mount_args(repo: Path, layout: GitLayout,
+                       workspace: Path | None = None) -> list[str]:
+    args = ["--bind", str(workspace or repo), str(repo)]
+    if workspace is None:
+        # Local Qwen and the frontier-side success command may inspect the real
+        # checkout. Normal clones have a .git directory; linked worktrees have
+        # a .git file plus common metadata. All of it remains read-only.
+        return args + git_mount_args(layout)
+    # External inference gets only the staged approved files. Never mount the
+    # original .git file/directory, common gitdir, objects, refs, config,
+    # alternates, or linked-worktree metadata into this namespace.
+    if (workspace / ".git").exists() or (workspace / ".git").is_symlink():
+        raise PolicyError("external privacy workspace unexpectedly contains Git metadata")
+    return args
+
+
 def validate_repo(value: str) -> Path:
     repo = Path(value).expanduser().resolve(strict=True)
     if not repo.is_dir():
@@ -222,9 +238,12 @@ def tree_violations(before: dict[str, str], after: dict[str, str], allowed: set[
 
 
 def safe_copy(source: Path, destination: Path, repo: Path) -> None:
+    relative = source.relative_to(repo)
+    if ".git" in relative.parts:
+        raise PolicyError(f"Git metadata is forbidden in the external privacy view: {relative}")
     if source.is_symlink():
         raise PolicyError(
-            f"symlinks are not allowed in the external privacy view: {source.relative_to(repo)}")
+            f"symlinks are not allowed in the external privacy view: {relative}")
     if source.is_dir():
         destination.mkdir(parents=True, exist_ok=True)
         for child in source.iterdir():
@@ -426,12 +445,8 @@ def sandbox_args(repo: Path, stage: Path, layout: GitLayout, models: Path,
         "--ro-bind", str(models), str(agent / "models.json"),
         "--ro-bind", str(source_agent / "settings.json"), str(agent / "settings.json"),
         "--ro-bind", str(stage / "mcp.json"), str(agent / "mcp.json"),
-        "--bind", str(workspace or repo), str(repo),
     ]
-    # Normal clones have a .git directory. Linked worktrees have a .git file
-    # pointing at a per-worktree gitdir under the common directory. Bind every
-    # required metadata path read-only so Git remains visible but cannot commit.
-    args += git_mount_args(layout)
+    args += project_mount_args(repo, layout, workspace)
     extension = source_agent / "extensions/tuios-agent-state.ts"
     if extension.is_file():
         args += ["--dir", str(agent / "extensions"), "--ro-bind", str(extension),

@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,46 @@ class PiTaskPolicyTests(unittest.TestCase):
     def tearDown(self):
         pi_task.HOME = self.old_home
         self.temp.cleanup()
+
+    def run_external_privacy_probe(self, workspace, head_blob, historical_blob):
+        bwrap = shutil.which("bwrap")
+        git = str(Path(shutil.which("git")).resolve())
+        python = str(Path(sys.executable).resolve())
+        script = r'''
+import pathlib
+import subprocess
+
+assert pathlib.Path("allowed.txt").is_file()
+assert not pathlib.Path("secret-head.txt").exists()
+assert not pathlib.Path("historical.txt").exists()
+assert not pathlib.Path(".git").exists()
+assert not any(path.name == ".git" for path in pathlib.Path(".").rglob(".git"))
+commands = [
+    [GIT, "rev-parse", "HEAD"],
+    [GIT, "show", "HEAD:secret-head.txt"],
+    [GIT, "cat-file", "-p", HEAD_BLOB],
+    [GIT, "cat-file", "-p", HISTORICAL_BLOB],
+    [GIT, "log", "-p", "--all"],
+    [GIT, "config", "--local", "--list", "--show-origin"],
+    [GIT, "remote", "-v"],
+    [GIT, "rev-parse", "--git-path", "objects/info/alternates"],
+    [GIT, "fsck", "--full"],
+]
+for command in commands:
+    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert result.returncode != 0, (command, result.stdout, result.stderr)
+pathlib.Path("allowed.txt").write_text("external approved edit\n")
+'''.replace("GIT", repr(git)).replace("HEAD_BLOB", repr(head_blob)).replace(
+            "HISTORICAL_BLOB", repr(historical_blob))
+        result = subprocess.run([
+            bwrap, "--die-with-parent", "--unshare-pid", "--unshare-ipc",
+            "--unshare-uts", "--new-session", "--clearenv",
+            "--ro-bind", "/nix/store", "/nix/store", "--proc", "/proc",
+            "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/work",
+            "--bind", str(workspace), "/work", "--chdir", "/work",
+            "--", python, "-c", script,
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
 
     def test_allowed_change_passes(self):
         before = pi_task.snapshot(self.repo)
@@ -96,6 +137,9 @@ class PiTaskPolicyTests(unittest.TestCase):
         self.assertIn(str(layout.dotgit), mounts)
         self.assertIn(str(layout.common), mounts)
         self.assertEqual(2, mounts.count("--ro-bind"))
+        local_mounts = pi_task.project_mount_args(worktree, layout)
+        self.assertIn(str(layout.dotgit), local_mounts)
+        self.assertIn(str(layout.common), local_mounts)
 
     def test_model_allowlist_has_no_fallback(self):
         self.assertEqual("local-qwen", pi_task.parse_args([
@@ -185,6 +229,69 @@ class PiTaskPolicyTests(unittest.TestCase):
         stage.mkdir()
         with self.assertRaisesRegex(pi_task.PolicyError, "symlinks are not allowed"):
             pi_task.stage_external_workspace(self.repo, stage, {"approved-link"})
+
+    def test_external_privacy_view_rejects_nested_git_metadata(self):
+        nested = self.repo / "vendor/component/.git"
+        nested.mkdir(parents=True)
+        (nested / "config").write_text("private nested repository metadata\n")
+        stage = pi_task.HOME / "nested-git-stage"
+        stage.mkdir()
+        with self.assertRaisesRegex(pi_task.PolicyError, "Git metadata is forbidden"):
+            pi_task.stage_external_workspace(self.repo, stage, {"vendor"})
+
+    def test_external_sandbox_has_no_head_history_config_objects_or_alternates(self):
+        (self.repo / "historical.txt").write_text("DELETED-HISTORY-CANARY\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "historical.txt"], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "history canary"],
+                       check=True)
+        historical_blob = subprocess.check_output([
+            "git", "-C", str(self.repo), "rev-parse", "HEAD:historical.txt"], text=True).strip()
+        subprocess.run(["git", "-C", str(self.repo), "rm", "-q", "historical.txt"], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "delete history canary"],
+                       check=True)
+        (self.repo / "secret-head.txt").write_text("UNAPPROVED-HEAD-CANARY\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "secret-head.txt"], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "head canary"],
+                       check=True)
+        head_blob = subprocess.check_output([
+            "git", "-C", str(self.repo), "rev-parse", "HEAD:secret-head.txt"], text=True).strip()
+        subprocess.run(["git", "-C", str(self.repo), "remote", "add", "origin",
+                        "https://ORIGIN-CONFIG-CANARY.invalid/private.git"], check=True)
+        alternate = pi_task.HOME / "scratch/alternate.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(alternate)], check=True)
+        alternates = self.repo / ".git/objects/info/alternates"
+        alternates.write_text(str(alternate / "objects") + "\n")
+
+        linked = pi_task.HOME / "scratch/privacy-linked"
+        subprocess.run(["git", "-C", str(self.repo), "worktree", "add", "-qb",
+                        "privacy-linked", str(linked)], check=True)
+        for label, checkout in (("normal", self.repo), ("linked", linked)):
+            with self.subTest(checkout=label):
+                layout = pi_task.git_layout(checkout)
+                before = pi_task.snapshot(checkout)
+                stage = pi_task.HOME / f"privacy-{label}"
+                stage.mkdir()
+                workspace = pi_task.stage_external_workspace(
+                    checkout, stage, {"allowed.txt"})
+                workspace_before = pi_task.tree_snapshot(workspace)
+                mounts = pi_task.project_mount_args(checkout, layout, workspace)
+                mount_text = "\n".join(mounts)
+                self.assertIn(str(workspace), mount_text)
+                self.assertNotIn(str(layout.dotgit), mount_text)
+                self.assertNotIn(str(layout.gitdir), mount_text)
+                self.assertNotIn(str(layout.common), mount_text)
+                self.run_external_privacy_probe(workspace, head_blob, historical_blob)
+                self.assertEqual([], pi_task.tree_violations(
+                    workspace_before, pi_task.tree_snapshot(workspace), {"allowed.txt"}))
+                self.assertEqual([], pi_task.policy_violations(before, pi_task.snapshot(checkout),
+                                                               set()))
+                pi_task.apply_external_changes(workspace, checkout, {"allowed.txt"})
+                self.assertEqual("external approved edit\n",
+                                 (checkout / "allowed.txt").read_text())
+                self.assertEqual([], pi_task.policy_violations(
+                    before, pi_task.snapshot(checkout), {"allowed.txt"}))
+                self.assertEqual("UNAPPROVED-HEAD-CANARY\n",
+                                 (checkout / "secret-head.txt").read_text())
 
     def test_accounting_refuses_observed_model_fallback(self):
         events = pi_task.HOME / "events.jsonl"
