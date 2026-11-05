@@ -92,14 +92,16 @@ combine changes manually. Remove a reviewed worktree with
 
 ERPNext integration lanes must each receive a different running test bench via
 `--erpnext-bench test`, `test1`, …, `test7`. The wrapper holds an exclusive
-bench lock and exposes only that bench's filtered MCP socket. UAT and production
-sites are never allocatable.
+bench lock. Local Qwen and the frontier-side success check expose only that
+bench's filtered MCP socket; external DSF inference never receives an ERPNext
+socket, command, credential, or data. UAT and production sites are never allocatable.
 
 ## Guardrails and failures
 
 Every run retains the 6 GiB scope, mandatory success command, exact write
-allowlist, HEAD/index and concurrent-tree guards, minimal HOME, empty `/var`, Context7, optional
-bench-scoped ERPNext, and session-scoped read-only TUIOS MCP access. Provider,
+allowlist, HEAD/index and concurrent-tree guards, minimal HOME, and empty `/var`.
+Local Qwen and the frontier-side success check retain direct Context7, optional
+bench-scoped ERPNext, and session-scoped no-pane-typing TUIOS MCP access. Provider,
 credential, model, control, worktree, bench, scope, and test failures name their
 cause and never fall back.
 
@@ -108,7 +110,12 @@ paths and no original `.git`, common gitdir, objects, refs, config, alternates,
 linked-worktree metadata, or history. Nested `.git` directories and symlinks are
 refused while staging. Local Qwen may see the original normal-clone or linked-
 worktree Git metadata read-only. The success command runs locally with read-only
-original Git only after external inference ends. Never approve production
+original Git only after external inference ends. External inference receives
+exactly one MCP: public Context7 through a credential-free local broker. It gets
+no TUIOS or ERPNext configuration, sockets, environment, native extension,
+credentials, session/mail/pane access, or bench data; it also gets no Nix daemon
+socket or host `/etc`. Its network namespace is isolated from host/LAN services,
+and reaches Melious only through the worker-aware Unix proxy relay. Never approve production
 credentials, production data, secrets, or unrelated repository content in
 external paths, the brief, or test output.
 

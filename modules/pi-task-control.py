@@ -32,6 +32,7 @@ MODEL = "deepseek-v4.1-flash-1017"
 UPSTREAM = "https://api.melious.ai"
 LISTEN = "127.0.0.1:5098"
 CONTROL_SOCKET = "/run/pi-task-control/control.sock"
+PROXY_SOCKET = "/run/pi-task-control/proxy.sock"
 STATE_DIR = "/var/lib/pi-task-control"
 INITIAL_CAP = Decimal("200")
 INITIAL_LIMIT = 5
@@ -774,24 +775,33 @@ def cli(argv: list[str]) -> int:
 def serve() -> int:
     state_dir = Path(os.environ.get("PI_TASK_CONTROL_STATE_DIR", STATE_DIR))
     control_socket = Path(os.environ.get("PI_TASK_CONTROL_SOCKET", CONTROL_SOCKET))
+    proxy_socket = Path(os.environ.get("PI_TASK_PROXY_SOCKET", PROXY_SOCKET))
     listen = os.environ.get("PI_TASK_CONTROL_LISTEN", LISTEN)
     controller = Controller(state_dir)
     probe()
     control_socket.parent.mkdir(parents=True, exist_ok=True)
     control_socket.unlink(missing_ok=True)
+    proxy_socket.unlink(missing_ok=True)
     ControlHandler.controller = controller
     control = ControlSocketServer(str(control_socket), ControlHandler)
     os.chmod(control_socket, 0o660)
     thread = threading.Thread(target=control.serve_forever, daemon=True)
     thread.start()
     ProxyHandler.controller = controller
+    unix_proxy = ControlSocketServer(str(proxy_socket), ProxyHandler)
+    os.chmod(proxy_socket, 0o660)
+    unix_thread = threading.Thread(target=unix_proxy.serve_forever, daemon=True)
+    unix_thread.start()
     host, port = listen.rsplit(":", 1)
     proxy = ThreadingHTTPServer((host, int(port)), ProxyHandler)
-    print(f"pi-task-control: model={MODEL} listen={listen} control={control_socket}", flush=True)
+    print(f"pi-task-control: model={MODEL} listen={listen} proxy={proxy_socket} "
+          f"control={control_socket}", flush=True)
     try:
         proxy.serve_forever()
     finally:
-        control.shutdown(); control.server_close(); control_socket.unlink(missing_ok=True)
+        control.shutdown(); control.server_close()
+        unix_proxy.shutdown(); unix_proxy.server_close()
+        control_socket.unlink(missing_ok=True); proxy_socket.unlink(missing_ok=True)
     return 0
 
 

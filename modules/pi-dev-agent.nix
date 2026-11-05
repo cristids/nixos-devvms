@@ -173,7 +173,7 @@ in
     # One socket per allocatable non-production ERPNext test bench. The accepted
     # service runs outside the worker mount namespace and filters both the bench
     # map and credentials before execing erpnext-mcp. Workers see only the socket.
-    systemd.user.sockets = lib.listToAttrs (map (bench: lib.nameValuePair
+    systemd.user.sockets = (lib.listToAttrs (map (bench: lib.nameValuePair
       "pi-task-erpnext-${bench}" {
         description = "ERPNext MCP broker socket for pi-task bench ${bench}";
         wantedBy = [ "sockets.target" ];
@@ -183,7 +183,18 @@ in
           RemoveOnStop = true;
           Accept = true;
         };
-      }) productionBenches);
+      }) productionBenches)) // {
+      pi-task-context7 = {
+        description = "Public Context7 MCP broker socket for external pi-task workers";
+        wantedBy = [ "sockets.target" ];
+        socketConfig = {
+          ListenStream = "%t/pi-task-context7.sock";
+          SocketMode = "0600";
+          RemoveOnStop = true;
+          Accept = true;
+        };
+      };
+    };
     systemd.user.services = (lib.listToAttrs (map (bench: lib.nameValuePair
       "pi-task-erpnext-${bench}@" {
         description = "Bench-filtered ERPNext MCP for pi-task (${bench})";
@@ -198,6 +209,19 @@ in
           ProtectHome = "read-only";
         };
       }) productionBenches)) // {
+      "pi-task-context7@" = {
+        description = "Public Context7 MCP broker for external pi-task workers";
+        serviceConfig = {
+          ExecStart = "${sw}/context7-mcp";
+          StandardInput = "socket";
+          StandardOutput = "socket";
+          StandardError = "journal";
+          NoNewPrivileges = true;
+          PrivateTmp = true;
+          ProtectSystem = "strict";
+          ProtectHome = true;
+        };
+      };
       # These files contain no credentials. Keep auth.json and conversation state
       # untouched; only the declarative provider/settings/MCP files are replaced.
       pi-dev-config = {

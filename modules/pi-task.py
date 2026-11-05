@@ -35,6 +35,7 @@ MODEL_SPECS = {
     },
 }
 ALLOWED_BENCHES = {"test", *{f"test{i}" for i in range(1, 8)}}
+MELIOUS_PROXY_SOCKET = Path("/run/pi-task-control/proxy.sock")
 
 
 class PolicyError(RuntimeError):
@@ -393,7 +394,21 @@ def ensure_scoped(argv: list[str]) -> None:
     ], env)
 
 
-def write_mcp(stage: Path, bench: str | None) -> tuple[Path, list[Path]]:
+def write_mcp(stage: Path, bench: str | None, external: bool,
+              filename: str = "mcp.json") -> tuple[Path, list[Path]]:
+    runtime = Path(os.environ["XDG_RUNTIME_DIR"])
+    if external:
+        context7_socket = runtime / "pi-task-context7.sock"
+        if not context7_socket.is_socket():
+            raise PolicyError("public Context7 MCP broker unavailable")
+        path = stage / filename
+        path.write_text(json.dumps({"mcpServers": {"context7": {
+            "command": "/run/current-system/sw/bin/socat",
+            "args": ["STDIO", f"UNIX-CONNECT:{context7_socket}"],
+            "exposure": "direct",
+        }}}, separators=(",", ":")))
+        path.chmod(0o600)
+        return path, [context7_socket]
     servers = {
         "context7": {
             "command": "/run/current-system/sw/bin/context7-mcp", "args": [],
@@ -406,7 +421,7 @@ def write_mcp(stage: Path, bench: str | None) -> tuple[Path, list[Path]]:
     }
     sockets = []
     if bench:
-        socket = Path(os.environ["XDG_RUNTIME_DIR"]) / f"pi-task-erpnext-{bench}.sock"
+        socket = runtime / f"pi-task-erpnext-{bench}.sock"
         if not socket.is_socket():
             raise PolicyError(f"ERPNext MCP broker unavailable for bench {bench}")
         sockets.append(socket)
@@ -415,19 +430,31 @@ def write_mcp(stage: Path, bench: str | None) -> tuple[Path, list[Path]]:
             "args": ["STDIO", f"UNIX-CONNECT:{socket}"],
             "exposure": "direct",
         }
-    path = stage / "mcp.json"
+    path = stage / filename
     path.write_text(json.dumps({"mcpServers": servers}, separators=(",", ":")))
     path.chmod(0o600)
     return path, sockets
 
 
-def sandbox_args(repo: Path, stage: Path, layout: GitLayout, models: Path,
-                 extra_sockets: list[Path], workspace: Path | None = None) -> list[str]:
+def sandbox_args(repo: Path, layout: GitLayout, models: Path, mcp: Path,
+                 extra_sockets: list[Path], external: bool,
+                 workspace: Path | None = None) -> list[str]:
     source_agent = HOME / ".pi/agent"
     if not models.is_file():
         raise PolicyError(f"missing per-run Pi model config: {models}")
     if not (source_agent / "settings.json").is_file():
         raise PolicyError(f"missing Pi config: {source_agent / 'settings.json'}")
+    if external != (workspace is not None):
+        raise PolicyError("external sandbox mode and staged workspace must match")
+    if external:
+        try:
+            external_servers = json.loads(mcp.read_text())["mcpServers"]
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise PolicyError("invalid external MCP configuration") from exc
+        if set(external_servers) != {"context7"}:
+            raise PolicyError("external inference may expose only public Context7 MCP")
+        if len(extra_sockets) != 1 or extra_sockets[0].name != "pi-task-context7.sock":
+            raise PolicyError("external inference may mount only the public Context7 MCP socket")
     socket = Path(os.environ.get("TUIOS_SOCKET", ""))
     if not socket.is_socket() or not os.environ.get("TUIOS_PANE_ID"):
         raise PolicyError("pi-task must run inside a TUIOS pane for session-scoped MCP access")
@@ -438,43 +465,67 @@ def sandbox_args(repo: Path, stage: Path, layout: GitLayout, models: Path,
         "--unshare-uts", "--new-session", "--clearenv",
         "--ro-bind", "/nix/store", "/nix/store",
         "--ro-bind", "/run/current-system", "/run/current-system",
-        "--ro-bind", "/etc", "/etc", "--ro-bind", "/bin", "/bin",
-        "--ro-bind", "/usr", "/usr", "--proc", "/proc", "--dev", "/dev",
+        "--proc", "/proc", "--dev", "/dev",
         "--tmpfs", "/tmp", "--tmpfs", "/var", "--tmpfs", "/home",
         "--dir", str(HOME), "--dir", str(HOME / ".pi"), "--dir", str(agent),
         "--ro-bind", str(models), str(agent / "models.json"),
         "--ro-bind", str(source_agent / "settings.json"), str(agent / "settings.json"),
-        "--ro-bind", str(stage / "mcp.json"), str(agent / "mcp.json"),
+        "--ro-bind", str(mcp), str(agent / "mcp.json"),
     ]
+    if not external:
+        args += ["--ro-bind", "/etc", "/etc", "--ro-bind", "/bin", "/bin",
+                 "--ro-bind", "/usr", "/usr"]
+    if external:
+        args += ["--unshare-net"]
     args += project_mount_args(repo, layout, workspace)
     extension = source_agent / "extensions/tuios-agent-state.ts"
-    if extension.is_file():
+    if not external and extension.is_file():
         args += ["--dir", str(agent / "extensions"), "--ro-bind", str(extension),
                  str(agent / "extensions/tuios-agent-state.ts")]
     daemon = Path("/nix/var/nix/daemon-socket")
-    if (daemon / "socket").is_socket():
+    if not external and (daemon / "socket").is_socket():
         args += ["--ro-bind", str(daemon), str(daemon), "--setenv", "NIX_REMOTE", "daemon"]
-    args += ["--dir", "/run/user", "--dir", str(socket.parent.parent),
-             "--dir", str(socket.parent), "--ro-bind", str(socket), str(socket)]
+    if not external:
+        args += ["--dir", "/run/user", "--dir", str(socket.parent.parent),
+                 "--dir", str(socket.parent), "--ro-bind", str(socket), str(socket)]
+    else:
+        if not MELIOUS_PROXY_SOCKET.is_socket():
+            raise PolicyError("worker-scoped Melious Unix proxy unavailable")
+        args += ["--dir", "/run/pi-task-control", "--ro-bind",
+                 str(MELIOUS_PROXY_SOCKET), str(MELIOUS_PROXY_SOCKET)]
     for extra in extra_sockets:
         args += ["--ro-bind", str(extra), str(extra)]
     env = {
         "HOME": str(HOME), "USER": os.environ.get("USER", "cristian"),
         "PATH": "/run/current-system/sw/bin", "TERM": "dumb", "LANG": "C.UTF-8",
-        "TMPDIR": "/tmp", "XDG_RUNTIME_DIR": str(socket.parent.parent),
-        "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
-        "NIX_SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+        "TMPDIR": "/tmp", "XDG_RUNTIME_DIR": "/tmp" if external else str(socket.parent.parent),
         "GIT_CONFIG_NOSYSTEM": "1", "PI_CODING_AGENT_DIR": str(agent),
         "PI_OFFLINE": "1", "PI_TELEMETRY": "0", "PI_SKIP_VERSION_CHECK": "1",
         "DO_NOT_TRACK": "1", "OPENSPEC_TELEMETRY": "0",
     }
-    for key in ("TUIOS_ENV", "TUIOS_HOST", "TUIOS_PANE_GRANTS", "TUIOS_PANE_ID",
-                "TUIOS_PANE_TOKEN", "TUIOS_SESSION", "TUIOS_SOCKET", "TUIOS_WINDOW_ID"):
-        if key in os.environ:
-            env[key] = os.environ[key]
+    if not external:
+        env["SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
+        env["NIX_SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
+    if not external:
+        for key in ("TUIOS_ENV", "TUIOS_HOST", "TUIOS_PANE_GRANTS", "TUIOS_PANE_ID",
+                    "TUIOS_PANE_TOKEN", "TUIOS_SESSION", "TUIOS_SOCKET", "TUIOS_WINDOW_ID"):
+            if key in os.environ:
+                env[key] = os.environ[key]
     for key, value in env.items():
         args += ["--setenv", key, value]
     return args + ["--chdir", str(repo)]
+
+
+def pi_command(spec: dict, model_args: list[str]) -> list[str]:
+    if not spec["external"]:
+        return ["pi", *model_args]
+    relay = (
+        "socat TCP-LISTEN:5098,bind=127.0.0.1,reuseaddr,fork "
+        f"UNIX-CONNECT:{MELIOUS_PROXY_SOCKET} & relay=$!; "
+        "sleep 0.1; pi \"$@\"; rc=$?; kill $relay 2>/dev/null || true; "
+        "wait $relay 2>/dev/null || true; exit $rc"
+    )
+    return ["/run/current-system/sw/bin/bash", "-c", relay, "pi-task-relay", *model_args]
 
 
 def final_message(events: Path) -> str:
@@ -577,7 +628,8 @@ def main(argv: list[str] | None = None) -> int:
         before = snapshot(repo)
         with tempfile.TemporaryDirectory(prefix="pi-task.", dir=runtime) as tmp:
             stage = Path(tmp)
-            _, mcp_sockets = write_mcp(stage, args.erpnext_bench)
+            inference_mcp, inference_sockets = write_mcp(
+                stage, args.erpnext_bench, spec["external"])
             models = write_run_models(stage, HOME / ".pi/agent/models.json",
                                       args.model, args.worker_id)
             workspace = None
@@ -585,7 +637,8 @@ def main(argv: list[str] | None = None) -> int:
             if spec["external"]:
                 workspace = stage_external_workspace(repo, stage, readable)
                 workspace_before = tree_snapshot(workspace)
-            sb = sandbox_args(repo, stage, layout, models, mcp_sockets, workspace)
+            sb = sandbox_args(repo, layout, models, inference_mcp,
+                              inference_sockets, spec["external"], workspace)
             allowed_text = "\n".join(f"- {name}" for name in sorted(allowed))
             read_text = "\n".join(f"- {name}" for name in sorted(readable))
             rules = stage / "rules.md"
@@ -596,16 +649,19 @@ def main(argv: list[str] | None = None) -> int:
                 "Make the smallest implementation needed.\n"
                 "You may change exactly these project-relative files and no others:\n" + allowed_text +
                 ("\nThis is an external-provider privacy view. Read only these reviewer-approved paths; "
-                 "do not seek production data, credentials, secrets, or unrelated repository content:\n" +
+                 "only public Context7 is available; local sessions, mail, benches, credentials, "
+                 "services, and networks are isolated. Do not seek production data, credentials, "
+                 "secrets, or unrelated repository content:\n" +
                  read_text if spec["external"] else "") +
                 "\nThe wrapper, not you, runs the success command. End with a concise change summary.\n")
             events = stage / "events.jsonl"
             prompt = f"Implement this single bounded slice:\n\n{args.brief}"
             started = time.monotonic()
+            model_args = ["-p", "--mode", "json", "--approve", "--no-session",
+                          "--model", spec["pi_model"], "--append-system-prompt",
+                          rules.read_text(), "--", prompt]
             with events.open("wb") as output:
-                pi_result = run(sb + ["--", "pi", "-p", "--mode", "json", "--approve",
-                                      "--no-session", "--model", spec["pi_model"],
-                                      "--append-system-prompt", rules.read_text(), "--", prompt],
+                pi_result = run(sb + ["--", *pi_command(spec, model_args)],
                                 stdout=output)
             pi_rc = pi_result.returncode
             elapsed = time.monotonic() - started
@@ -638,7 +694,13 @@ def main(argv: list[str] | None = None) -> int:
                 # The success command uses the same isolation and 6 GiB outer scope,
                 # but the full local checkout. External model inference has ended, so
                 # unrelated source never crosses the provider privacy boundary.
-                success_sb = sandbox_args(repo, stage, layout, models, mcp_sockets)
+                if spec["external"]:
+                    success_mcp, success_sockets = write_mcp(
+                        stage, args.erpnext_bench, False, "success-mcp.json")
+                else:
+                    success_mcp, success_sockets = inference_mcp, inference_sockets
+                success_sb = sandbox_args(repo, layout, models, success_mcp,
+                                          success_sockets, False)
                 test_rc = run(success_sb + ["--", "/run/current-system/sw/bin/bash", "-lc",
                                             args.success]).returncode
                 problems = policy_violations(before, snapshot(repo), allowed)

@@ -1,7 +1,9 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -17,6 +19,7 @@ SPEC.loader.exec_module(pi_task)
 class PiTaskPolicyTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
+        self.bound_sockets = []
         self.old_home = pi_task.HOME
         pi_task.HOME = Path(self.temp.name)
         self.repo = pi_task.HOME / "scratch/repo"
@@ -30,8 +33,17 @@ class PiTaskPolicyTests(unittest.TestCase):
         subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "base"], check=True)
 
     def tearDown(self):
+        for bound in self.bound_sockets:
+            bound.close()
         pi_task.HOME = self.old_home
         self.temp.cleanup()
+
+    def bind_socket(self, path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        bound = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        bound.bind(str(path))
+        self.bound_sockets.append(bound)
+        return path
 
     def run_external_privacy_probe(self, workspace, head_blob, historical_blob):
         bwrap = shutil.which("bwrap")
@@ -69,6 +81,45 @@ pathlib.Path("allowed.txt").write_text("external approved edit\n")
             "--ro-bind", "/nix/store", "/nix/store", "--proc", "/proc",
             "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/work",
             "--bind", str(workspace), "/work", "--chdir", "/work",
+            "--", python, "-c", script,
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def run_external_channel_probe(self, context7_socket, proxy_socket):
+        bwrap = shutil.which("bwrap")
+        python = str(Path(sys.executable).resolve())
+        script = r'''
+import pathlib
+import socket
+
+assert pathlib.Path("/run/user/1000/pi-task-context7.sock").is_socket()
+assert pathlib.Path("/run/pi-task-control/proxy.sock").is_socket()
+for forbidden in (
+    "/run/user/1000/tuios.sock",
+    "/run/user/1000/pi-task-erpnext-test.sock",
+    "/nix/var/nix/daemon-socket/socket",
+):
+    assert not pathlib.Path(forbidden).exists(), forbidden
+    probe = socket.socket(socket.AF_UNIX)
+    try:
+        probe.connect(forbidden)
+    except (FileNotFoundError, ConnectionRefusedError):
+        pass
+    else:
+        raise AssertionError(f"forbidden local channel connected: {forbidden}")
+for port in (22, 8000, 8010, 5098):
+    probe = socket.socket()
+    probe.settimeout(0.1)
+    assert probe.connect_ex(("127.0.0.1", port)) != 0, port
+'''
+        result = subprocess.run([
+            bwrap, "--die-with-parent", "--unshare-pid", "--unshare-ipc",
+            "--unshare-uts", "--unshare-net", "--new-session", "--clearenv",
+            "--ro-bind", "/nix/store", "/nix/store", "--proc", "/proc", "--dev", "/dev",
+            "--dir", "/run", "--dir", "/run/user", "--dir", "/run/user/1000",
+            "--dir", "/run/pi-task-control",
+            "--ro-bind", str(context7_socket), "/run/user/1000/pi-task-context7.sock",
+            "--ro-bind", str(proxy_socket), "/run/pi-task-control/proxy.sock",
             "--", python, "-c", script,
         ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.assertEqual(0, result.returncode, result.stderr)
@@ -292,6 +343,86 @@ pathlib.Path("allowed.txt").write_text("external approved edit\n")
                     before, pi_task.snapshot(checkout), {"allowed.txt"}))
                 self.assertEqual("UNAPPROVED-HEAD-CANARY\n",
                                  (checkout / "secret-head.txt").read_text())
+
+    def test_external_has_only_context7_and_no_local_data_channels(self):
+        runtime = pi_task.HOME / "runtime"
+        context7 = self.bind_socket(runtime / "pi-task-context7.sock")
+        tuios = self.bind_socket(runtime / "tuios.sock")
+        erpnext = self.bind_socket(runtime / "pi-task-erpnext-test.sock")
+        proxy = self.bind_socket(runtime / "melious-proxy.sock")
+        agent = pi_task.HOME / ".pi/agent"
+        (agent / "extensions").mkdir(parents=True)
+        (agent / "settings.json").write_text("{}\n")
+        (agent / "extensions/tuios-agent-state.ts").write_text("// private integration\n")
+        stage = pi_task.HOME / "channel-stage"
+        stage.mkdir()
+        models = stage / "models.json"
+        models.write_text("{}\n")
+        workspace = pi_task.stage_external_workspace(self.repo, stage, {"allowed.txt"})
+        layout = pi_task.git_layout(self.repo)
+        old_env = {key: os.environ.get(key) for key in (
+            "XDG_RUNTIME_DIR", "TUIOS_SOCKET", "TUIOS_PANE_ID", "TUIOS_PANE_TOKEN")}
+        old_proxy = pi_task.MELIOUS_PROXY_SOCKET
+        os.environ.update({
+            "XDG_RUNTIME_DIR": str(runtime), "TUIOS_SOCKET": str(tuios),
+            "TUIOS_PANE_ID": "pane-private", "TUIOS_PANE_TOKEN": "token-private",
+        })
+        pi_task.MELIOUS_PROXY_SOCKET = proxy
+        try:
+            external_mcp, external_sockets = pi_task.write_mcp(
+                stage, "test", True, "external-mcp.json")
+            external_config = json.loads(external_mcp.read_text())["mcpServers"]
+            self.assertEqual({"context7"}, set(external_config))
+            serialized = external_mcp.read_text()
+            self.assertNotIn("tuios", serialized.lower())
+            self.assertNotIn("erpnext", serialized.lower())
+            self.assertNotIn(str(tuios), serialized)
+            self.assertNotIn(str(erpnext), serialized)
+            self.assertEqual([context7], external_sockets)
+
+            external_args = pi_task.sandbox_args(
+                self.repo, layout, models, external_mcp, external_sockets, True, workspace)
+            external_text = "\n".join(external_args)
+            self.assertIn("--unshare-net", external_args)
+            self.assertIn(str(context7), external_args)
+            self.assertIn(str(proxy), external_args)
+            self.assertNotIn(str(tuios), external_text)
+            self.assertNotIn(str(erpnext), external_text)
+            self.assertNotIn("TUIOS_SOCKET", external_args)
+            self.assertNotIn("TUIOS_PANE_TOKEN", external_args)
+            self.assertNotIn("tuios-agent-state.ts", external_text)
+            self.assertNotIn("NIX_REMOTE", external_args)
+            self.assertNotIn("/nix/var/nix/daemon-socket", external_text)
+            self.assertNotIn("/etc", external_args)
+            self.assertNotIn("/bin", external_args)
+            self.assertNotIn("/usr", external_args)
+            self.assertNotIn("SSL_CERT_FILE", external_args)
+            self.assertNotIn("NIX_SSL_CERT_FILE", external_args)
+            self.run_external_channel_probe(context7, proxy)
+
+            local_mcp, local_sockets = pi_task.write_mcp(
+                stage, "test", False, "local-mcp.json")
+            local_config = json.loads(local_mcp.read_text())["mcpServers"]
+            self.assertEqual({"context7", "tuios", "erpnext"}, set(local_config))
+            self.assertEqual([erpnext], local_sockets)
+            local_args = pi_task.sandbox_args(
+                self.repo, layout, models, local_mcp, local_sockets, False)
+            local_text = "\n".join(local_args)
+            self.assertNotIn("--unshare-net", local_args)
+            self.assertIn(str(tuios), local_text)
+            self.assertIn(str(erpnext), local_text)
+            self.assertIn("TUIOS_SOCKET", local_args)
+            self.assertIn("TUIOS_PANE_TOKEN", local_args)
+            self.assertIn("tuios-agent-state.ts", local_text)
+            self.assertIn("/etc", local_args)
+            self.assertIn("SSL_CERT_FILE", local_args)
+        finally:
+            pi_task.MELIOUS_PROXY_SOCKET = old_proxy
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
 
     def test_accounting_refuses_observed_model_fallback(self):
         events = pi_task.HOME / "events.jsonl"

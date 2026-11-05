@@ -203,6 +203,33 @@ class ControllerTests(unittest.TestCase):
 
 
 class ProviderBoundaryTests(unittest.TestCase):
+    def test_worker_scoped_catalog_is_served_over_unix_proxy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            controller = control.Controller(root / "state")
+            controller.register("worker-unix", {"user": "test"}, "unix proxy test")
+            control.ProxyHandler.controller = controller
+            path = root / "proxy.sock"
+            server = control.ControlSocketServer(str(path), control.ProxyHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                client = control.socket.socket(control.socket.AF_UNIX, control.socket.SOCK_STREAM)
+                client.settimeout(2)
+                client.connect(str(path))
+                client.sendall(
+                    b"GET /w/worker-unix/v1/models HTTP/1.1\r\nHost: localhost\r\n"
+                    b"Connection: close\r\n\r\n")
+                response = bytearray()
+                while chunk := client.recv(65536):
+                    response += chunk
+                client.close()
+                self.assertIn(b"HTTP/1.1 200 OK", response)
+                self.assertIn(control.MODEL.encode(), response)
+            finally:
+                server.shutdown()
+                server.server_close()
+
     def test_exact_model_catalog_is_required(self):
         control.validate_catalog(json.dumps({"data": [{"id": control.MODEL}]}).encode())
         with self.assertRaisesRegex(control.ControlError, "required Melious model is absent"):
