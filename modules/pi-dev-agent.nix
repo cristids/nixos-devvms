@@ -91,5 +91,19 @@ in
       '';
       restartTriggers = [ models settings mcp ];
     };
+
+    # The system activation hook can run before pi-dev-config has created
+    # ~/.pi/agent on a fresh host. Install the native TUIOS Pi plugin only
+    # after that directory exists; the command is idempotent and versioned.
+    systemd.user.services.pi-tuios-integration = {
+      description = "Install the TUIOS plugin for Pi";
+      wantedBy = [ "default.target" ];
+      after = [ "pi-dev-config.service" ];
+      requires = [ "pi-dev-config.service" ];
+      serviceConfig = { Type = "oneshot"; RemainAfterExit = true; };
+      script = ''
+        ${sw}/tuios integration install pi
+      '';
+    };
   };
 }
