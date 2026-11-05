@@ -4,6 +4,10 @@
 # hobby-scoped tokens; the freedom to let agents run loose here is the point of
 # keeping it separate from devpro. Everything else: ../common.
 {
+  # Open-weight team bake-off (2026-11-05): pi 1.5 + taskplane, dsh, recording proxy,
+  # sandboxed runners, throwaway Frappe benches. Data in ~/bakeoff, not in this repo.
+  imports = [ ../../modules/bakeoff ];
+
   networking.hostName = "devhobby";
 
   # Hobby languages (not in devpro on purpose): Common Lisp + Prolog. Emacs-side

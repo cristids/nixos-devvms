@@ -107,6 +107,12 @@
         # Build runs the pytest suite: `nix build path:.#erpnext-mcp`.
         erpnext-mcp =
           nixpkgs.legacyPackages.${system}.callPackage ./modules/erpnext-mcp { };
+        # Bake-off (devhobby): pi 1.5 + taskplane, dsh, frappe-bench CLI.
+        pi-coding-agent =
+          nixpkgs.legacyPackages.${system}.callPackage ./pkgs/pi-coding-agent { };
+        dsh = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/dsh { };
+        frappe-bench =
+          nixpkgs.legacyPackages.${system}.callPackage ./pkgs/frappe-bench { };
       };
     };
 }

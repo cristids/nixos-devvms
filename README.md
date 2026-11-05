@@ -40,6 +40,19 @@ and lands on the persistent `/home` / `/var` volumes.
   delegate simple tasks to (skill `delegate-to-omp`):
   `omp-task --cwd ~/development/<proj> "<spec>\nAcceptance: <cmd>"` (default cap 0.50 USD).
   bwrap: RW only the project dir, `$HOME` is empty, `/var` hidden, `.git` read-only.
+- **Bake-off harness, devhobby only** (`modules/bakeoff`, 2026-11-05): pi 1.5.0 + taskplane
+  0.30.6 (`pkgs/pi-coding-agent`), dsh (`pkgs/dsh`, on the official Node binary,
+  `pkgs/nodejs-official`), frappe-bench CLI (`pkgs/frappe-bench`), and these tools:
+  - `bakeoff-proxy` on 127.0.0.1:5099 is the only path to models. It holds the Melious key,
+    records every call, and enforces a total cap of 200 credits.
+  - `bakeoff-pi` / `bakeoff-dsh` run one sandboxed, recorded agent run each. `--orch` drives a
+    taskplane batch.
+  - `bakeoff-bench init|reset|link|mail|snapshot` manages throwaway Frappe benches b1–b3,
+    backed by a local MariaDB and Mailpit.
+  - `bakeoff-repo-at` creates base-only run repos.
+
+  Data lives in `~/bakeoff`, not in this repo. Secrets: `/var/lib/melious.key` and
+  `/var/lib/bakeoff/web-mcp.token`.
 - **MCPs** — `context7-mcp` (Nix-packaged, `pkgs/context7-mcp`) on both VMs; `erpnext-mcp`
   (`modules/erpnext-mcp`, test :8000 / UAT :8001 only, no delete) on devpro. Wired into
   `~/.codex/config.toml` and `~/development/erpnext/.mcp.json` by `omp-dev-integrations`.
