@@ -491,7 +491,9 @@ def sandbox_args(repo: Path, layout: GitLayout, models: Path, mcp: Path,
     else:
         if not MELIOUS_PROXY_SOCKET.is_socket():
             raise PolicyError("worker-scoped Melious Unix proxy unavailable")
-        args += ["--dir", "/run/pi-task-control", "--ro-bind",
+        context_parent = extra_sockets[0].parent
+        args += ["--dir", "/run/user", "--dir", str(context_parent),
+                 "--dir", "/run/pi-task-control", "--ro-bind",
                  str(MELIOUS_PROXY_SOCKET), str(MELIOUS_PROXY_SOCKET)]
     for extra in extra_sockets:
         args += ["--ro-bind", str(extra), str(extra)]
