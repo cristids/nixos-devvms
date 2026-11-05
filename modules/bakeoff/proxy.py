@@ -146,6 +146,9 @@ def clamp_tokens(body: dict) -> dict:
     return changed
 
 
+SETTLEMENT_ERR = b"billing_hold_settlement_failed"
+
+
 class StreamSummary:
     """Accumulates an OpenAI chat stream (SSE) or a JSON response into a call summary."""
 
@@ -348,17 +351,35 @@ async def _forward(request, url, headers, body, rec, rundir, summary):
     raw = bytearray()
     is_sse = "text/event-stream" in resp.headers.get("Content-Type", "")
     client_gone = False
+    pending = b""
+
+    async def send(data: bytes) -> None:
+        nonlocal client_gone
+        if data and not client_gone:
+            try:
+                await out.write(data)
+            except (ConnectionResetError, RuntimeError):
+                client_gone = True
+
     try:
         async for chunk in resp.content.iter_any():
             if len(raw) < RAW_LIMIT:
                 raw += chunk
             if summary is not None and is_sse:
                 summary.feed(chunk)
-            if not client_gone:
-                try:
-                    await out.write(chunk)
-                except (ConnectionResetError, RuntimeError):
-                    client_gone = True
+                # Forward whole SSE events; drop Melious' post-completion billing error event
+                # (`billing_hold_settlement_failed` after finish_reason + usage, 11-05): the response
+                # is complete, but clients (pi) would end the turn with stopReason=error.
+                pending += chunk
+                while b"\n\n" in pending:
+                    event, pending = pending.split(b"\n\n", 1)
+                    if summary.finish and SETTLEMENT_ERR in event:
+                        rec["settlement_error_dropped"] = rec.get("settlement_error_dropped", 0) + 1
+                        continue
+                    await send(event + b"\n\n")
+            else:
+                await send(chunk)
+        await send(pending)
     except Exception as exc:
         rec["stream_error"] = f"{type(exc).__name__}: {exc}"[:300]
     finally:

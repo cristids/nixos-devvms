@@ -101,3 +101,13 @@ def test_refusal_caps():
     assert p.refusal(run_id) is None                   # in flight -> may finish
     p.total = p.HARD_CAP
     assert "global spend cap" in p.refusal(run_id)
+
+
+def test_settlement_error_after_completion_still_ok():
+    # Melious 11-05: complete stream + usage, then {"type":"error",...billing_hold_settlement_failed}.
+    err = {"type": "error", "error": {"message": "Settlement failed", "type": "billing_error",
+                                      "code": "billing_hold_settlement_failed"}}
+    raw = sse(chunk({"content": "OK"}), chunk(finish="tool_calls"), USAGE, err)
+    s, c = run(raw)
+    assert c == "ok" and s.finish == "tool_calls"
+    assert p.SETTLEMENT_ERR in raw
