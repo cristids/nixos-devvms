@@ -173,6 +173,13 @@ class PiTaskPolicyTests(unittest.TestCase):
         ])
         self.assertEqual("review-17", dsf.worker_id)
 
+    def test_control_call_uses_stable_system_path(self):
+        completed = subprocess.CompletedProcess([], 0, stdout='{"state":"active"}\n',
+                                                stderr="")
+        with mock.patch.object(pi_task, "run", return_value=completed) as called:
+            self.assertEqual({"state": "active"}, pi_task.control_call("status"))
+        self.assertEqual(pi_task.PI_TASK_CONTROL, called.call_args.args[0][0])
+
     def test_model_config_exposes_exactly_two_production_models(self):
         path = pi_task.HOME / "models.json"
         path.write_text(json.dumps({"providers": {

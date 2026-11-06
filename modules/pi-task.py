@@ -37,6 +37,7 @@ MODEL_SPECS = {
 }
 ALLOWED_BENCHES = {"test", *{f"test{i}" for i in range(1, 8)}}
 SEARXNG_HEALTH = "http://192.168.40.28:8080/healthz"
+PI_TASK_CONTROL = "/run/current-system/sw/bin/pi-task-control"
 WORKER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 INET_RE = re.compile(
     r"sa_family=AF_INET6?.*?sin6?_port=htons\((\d+)\).*?"
@@ -309,7 +310,7 @@ def write_run_models(stage: Path, source: Path, model: str,
 
 
 def control_call(*args: str) -> dict:
-    result = run(["pi-task-control", *args], stdout=subprocess.PIPE,
+    result = run([PI_TASK_CONTROL, *args], stdout=subprocess.PIPE,
                  stderr=subprocess.PIPE, text=True)
     if result.returncode:
         raise PolicyError(
