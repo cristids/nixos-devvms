@@ -176,12 +176,26 @@ def digest_path(path: Path) -> str:
                 h.update(block)
         return f"file:{info.st_mode & 0o7777:o}:{h.hexdigest()}"
     if stat.S_ISDIR(info.st_mode):
-        # This is normally a submodule path from git ls-files.
-        subhead = git(path, "rev-parse", "-q", "--verify", "HEAD", check=False,
-                      text=True).strip()
-        substatus = git(path, "status", "--porcelain=v1", "--untracked-files=all",
-                        check=False)
-        return "dir:" + subhead + ":" + hashlib.sha256(substatus).hexdigest()
+        # Directories returned by git ls-files are normally gitlinks. An empty
+        # gitlink has no nested .git, so `git -C path` walks upward and would
+        # otherwise digest the enclosing worker checkout. Only query Git when
+        # the directory itself is a repository; fingerprint plain contents so
+        # changes below an unpopulated gitlink still fail closed.
+        top = git(path, "rev-parse", "--show-toplevel", check=False,
+                  text=True).strip()
+        if top and Path(top).resolve() == path.resolve():
+            subhead = git(path, "rev-parse", "-q", "--verify", "HEAD", check=False,
+                          text=True).strip()
+            substatus = git(path, "status", "--porcelain=v1", "--untracked-files=all",
+                            check=False)
+            return "dir:" + subhead + ":" + hashlib.sha256(substatus).hexdigest()
+        h = hashlib.sha256()
+        for child in sorted(path.iterdir(), key=lambda item: os.fsencode(item.name)):
+            h.update(os.fsencode(child.name))
+            h.update(b"\0")
+            h.update(digest_path(child).encode(errors="surrogateescape"))
+            h.update(b"\0")
+        return "dir-tree:" + h.hexdigest()
     return f"other:{info.st_mode}"
 
 

@@ -192,6 +192,38 @@ for port in (22, 8000, 8010, 5098):
         self.assertIn(str(layout.dotgit), local_mounts)
         self.assertIn(str(layout.common), local_mounts)
 
+    def test_empty_nested_gitlink_does_not_absorb_linked_worktree_status(self):
+        gitlink = ".claude/worktrees/dazzling-shaw"
+        head = subprocess.check_output([
+            "git", "-C", str(self.repo), "rev-parse", "HEAD"], text=True).strip()
+        subprocess.run([
+            "git", "-C", str(self.repo), "update-index", "--add", "--cacheinfo",
+            f"160000,{head},{gitlink}"], check=True)
+        subprocess.run([
+            "git", "-C", str(self.repo), "commit", "-qm", "track empty nested gitlink"],
+            check=True)
+
+        worktree = pi_task.HOME / "scratch/gitlink-worker"
+        subprocess.run([
+            "git", "-C", str(self.repo), "worktree", "add", "-qb", "gitlink-worker",
+            str(worktree)], check=True)
+        (worktree / gitlink).mkdir(parents=True, exist_ok=True)
+        before = pi_task.snapshot(worktree)
+        allowed = "qa/leave-rebuild/test_n05_owned_cleanup_offline.py"
+        (worktree / allowed).parent.mkdir(parents=True)
+        (worktree / allowed).write_text("def test_candidate():\n    pass\n")
+        after = pi_task.snapshot(worktree)
+
+        self.assertEqual(before["files"][gitlink], after["files"][gitlink])
+        self.assertEqual([], pi_task.policy_violations(before, after, {allowed}))
+
+        (worktree / gitlink / "unexpected.txt").write_text("changed\n")
+        changed = pi_task.snapshot(worktree)
+        self.assertIn(
+            f"out-of-scope path changed: {gitlink}",
+            pi_task.policy_violations(after, changed, {allowed}),
+        )
+
     def test_model_allowlist_has_no_fallback(self):
         self.assertEqual("local-qwen", pi_task.parse_args([
             "--success", "true", "brief",
