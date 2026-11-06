@@ -183,6 +183,15 @@ dependency; then admission fails clearly if SearXNG is unavailable.
 
 ## Live monitoring and audit
 
+The supervisor reports its own TUIOS pane as Pi: `working` through admission,
+implementation and independent acceptance checks, `done` only after all checks
+pass, otherwise `errored`. Reports use the inherited pane identity/token outside
+the worker sandbox and are best-effort with a two-second timeout. Pi's installed
+upstream extension intentionally ignores JSON/print mode, so it cannot provide
+this lifecycle. No additional socket directory is exposed. A forced kill can
+prevent the final report; consult process/controller state as well. Already
+running workers keep their old supervisor until the next packet.
+
 Both providers use one execution and telemetry path. Pi JSON is consumed while
 the process runs: tool start/end and per-turn model/token/cost usage are printed
 live and appended as sanitized JSONL to

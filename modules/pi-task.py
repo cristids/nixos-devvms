@@ -394,6 +394,31 @@ def control_call(*args: str) -> dict:
         raise PolicyError("DSF control returned invalid status") from exc
 
 
+def report_pane(state: str, message: str) -> bool:
+    """Report from the supervisor: Pi's upstream hook only covers TUI mode.
+
+    Always address our own authenticated pane; never fall back to the focused
+    pane. Reporting is bounded and must not change a worker's outcome.
+    """
+    pane = os.environ.get("TUIOS_PANE_ID")
+    session = os.environ.get("TUIOS_SESSION")
+    if not pane or not session or not os.environ.get("TUIOS_SOCKET"):
+        return False
+    try:
+        result = subprocess.run([
+            "/run/current-system/sw/bin/tuios", "set-agent-state", state,
+            "--harness", "pi", "--session", session, "--window", pane,
+            "--message", message,
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+        if result.returncode == 0:
+            return True
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    print("pi-task: WARNING: TUIOS state report unavailable; worker continues",
+          file=sys.stderr)
+    return False
+
+
 def accounting(events: Path, friendly_model: str, elapsed: float, pi_rc: int) -> dict:
     expected = MODEL_SPECS[friendly_model]["event_model"]
     totals = {"turns": 0, "input": 0, "output": 0, "cache_read": 0, "cost": 0.0}
@@ -813,6 +838,7 @@ def main(argv: list[str] | None = None) -> int:
     final_outcome = "failed"
     audit = None
     attempt = 1
+    pane_started = False
     try:
         args = parse_args(argv)
         attempt = args.attempt
@@ -836,6 +862,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.erpnext_bench and args.erpnext_bench not in W_SLOTS:
             raise PolicyError("ERPNext worker writes must use W1-W6, not shared test/UAT benches")
         ensure_scoped(argv)
+        pane_started = True
+        report_pane("working", "pi-task: admission and environment checks")
         runtime = Path(os.environ["XDG_RUNTIME_DIR"])
         worker_identity = args.worker_id or "local-qwen"
         run_id = f"{worker_identity}-a{args.attempt}-{int(time.time())}-{os.getpid()}"
@@ -922,6 +950,7 @@ def main(argv: list[str] | None = None) -> int:
             model_args = ["-p", "--mode", "json", "--approve", "--no-session",
                           "--model", spec["pi_model"], "--append-system-prompt",
                           rules.read_text(), "--", prompt]
+            report_pane("working", "pi-task: implementing and testing")
             pi_rc = monitored_run(sb + ["--", *worker_command(repo, ["pi", *model_args])], events, audit)
             elapsed = time.monotonic() - started
             try:
@@ -947,6 +976,7 @@ def main(argv: list[str] | None = None) -> int:
                 return EXIT_POLICY
             test_rc: int | None = None
             if pi_rc == 0:
+                report_pane("working", "pi-task: independent acceptance checks")
                 # The success command uses the exact same sandbox capabilities and
                 # 6 GiB outer scope as either trusted implementation provider.
                 success_sb = sandbox_args(repo, layout, models, inference_mcp,
@@ -987,6 +1017,10 @@ def main(argv: list[str] | None = None) -> int:
             except PolicyError as exc:
                 print(f"pi-task: failed to finalize worker {registered_worker}: {exc}",
                       file=sys.stderr)
+        if pane_started:
+            report_pane("done" if final_outcome == "completed" else "errored",
+                        "pi-task: acceptance passed" if final_outcome == "completed"
+                        else "pi-task: failed; inspect pane and audit log")
 
 
 if __name__ == "__main__":

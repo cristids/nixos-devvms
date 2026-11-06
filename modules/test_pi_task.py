@@ -57,6 +57,32 @@ class PiTaskPolicyTests(unittest.TestCase):
         (self.repo / "allowed.txt").write_text("new\n")
         self.assertEqual([], pi_task.policy_violations(before, pi_task.snapshot(self.repo), {"allowed.txt"}))
 
+    def test_pane_reporting_targets_only_own_pane_and_is_bounded(self):
+        with mock.patch.dict(os.environ, {
+            "TUIOS_PANE_ID": "worker-pane", "TUIOS_SESSION": "workers",
+            "TUIOS_SOCKET": "/run/user/1000/tuios/tuios.sock",
+        }), mock.patch.object(pi_task.subprocess, "run") as call:
+            call.return_value.returncode = 0
+            for state in ("working", "done", "errored"):
+                self.assertTrue(pi_task.report_pane(state, "fixed status"))
+                argv = call.call_args.args[0]
+                self.assertEqual("worker-pane", argv[argv.index("--window") + 1])
+                self.assertEqual("workers", argv[argv.index("--session") + 1])
+                self.assertEqual("pi", argv[argv.index("--harness") + 1])
+                self.assertEqual(state, argv[2])
+                self.assertEqual(2, call.call_args.kwargs["timeout"])
+            call.return_value.returncode = 1
+            self.assertFalse(pi_task.report_pane("working", "status"))
+            for error in (OSError("offline"), subprocess.TimeoutExpired("tuios", 2)):
+                call.side_effect = error
+                self.assertFalse(pi_task.report_pane("working", "status"))
+
+    def test_pane_reporting_never_falls_back_to_focused_pane(self):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+                mock.patch.object(pi_task.subprocess, "run") as call:
+            self.assertFalse(pi_task.report_pane("working", "status"))
+            call.assert_not_called()
+
     def prepare_w(self):
         root = pi_task.HOME / "pi-envs"
         slot = root / "w1"
