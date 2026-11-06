@@ -277,6 +277,13 @@ def check_web_mcp_health() -> tuple[bool, str]:
     return True, "ok"
 
 
+def web_admission(required: bool) -> tuple[bool, str]:
+    available, detail = check_web_mcp_health()
+    if required and not available:
+        raise PolicyError(f"SearXNG MCP backend unavailable (degraded): {detail}")
+    return available, detail
+
+
 def validate_model_config(path: Path) -> None:
     try:
         config = json.loads(path.read_text())
@@ -706,13 +713,11 @@ def main(argv: list[str] | None = None) -> int:
         audit = AuditLogger(run_id, args.model, worker_identity)
         audit.write("run-start", model=spec["event_model"], attempt=args.attempt,
                     allowed_file_count=len(allowed), erpnext_bench=bool(args.erpnext_bench))
-        web_ok, web_detail = check_web_mcp_health()
+        web_ok, web_detail = web_admission(args.require_web)
         audit.write("capability", capability="searxng",
                     result="available" if web_ok else "degraded")
         if not web_ok:
             message = f"SearXNG MCP backend unavailable (degraded): {web_detail}"
-            if args.require_web:
-                raise PolicyError(message)
             print(f"pi-task: WARNING: {message}; continuing because --require-web was not set",
                   file=sys.stderr)
         provider_lock = None

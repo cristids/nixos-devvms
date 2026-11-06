@@ -308,9 +308,12 @@ class PiTaskPolicyTests(unittest.TestCase):
 
     def test_web_health_is_optional_unless_explicitly_required(self):
         with mock.patch.object(pi_task, "urlopen", side_effect=OSError("offline")):
-            available, detail = pi_task.check_web_mcp_health()
+            available, detail = pi_task.web_admission(False)
         self.assertFalse(available)
         self.assertIn("offline", detail)
+        with mock.patch.object(pi_task, "urlopen", side_effect=OSError("offline")):
+            with self.assertRaisesRegex(pi_task.PolicyError, "SearXNG MCP backend unavailable"):
+                pi_task.web_admission(True)
         optional = pi_task.parse_args(["--success", "true", "brief"])
         required = pi_task.parse_args(["--require-web", "--success", "true", "brief"])
         self.assertFalse(optional.require_web)
@@ -333,6 +336,14 @@ class PiTaskPolicyTests(unittest.TestCase):
             "--attempt", "3", "--success", "true", "brief"]).attempt)
         with self.assertRaises(SystemExit):
             pi_task.parse_args(["--attempt", "4", "--success", "true", "brief"])
+
+    def test_third_failure_is_audited_for_takeover(self):
+        audit = pi_task.AuditLogger("run-fail", "local-qwen", "local-qwen")
+        pi_task.report_failure(3, "test", audit)
+        record = json.loads(audit.path.read_text().splitlines()[-1])
+        self.assertEqual("run-failure", record["kind"])
+        self.assertEqual("test", record["classification"])
+        self.assertTrue(record["takeover_required"])
 
     def test_network_metadata_records_destinations_without_payloads(self):
         ipv4 = pi_task.network_metadata(
