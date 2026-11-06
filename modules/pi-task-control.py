@@ -29,6 +29,8 @@ from zoneinfo import ZoneInfo
 
 
 MODEL = "deepseek-v4.1-flash-1017"
+MODELS = {spec["id"]: spec for spec in json.loads(
+    Path(__file__).with_name("pi-tested-models.json").read_text()).values()}
 UPSTREAM = "https://api.melious.ai"
 LISTEN = "127.0.0.1:5098"
 CONTROL_SOCKET = "/run/pi-task-control/control.sock"
@@ -209,7 +211,9 @@ class Controller:
                    if worker.get("in_flight", 0) > 0 or
                    (not worker.get("terminal") and worker.get("admitted")))
 
-    def register(self, worker_id: str, actor: dict, reason: str) -> dict:
+    def register(self, worker_id: str, actor: dict, reason: str, model: str = MODEL) -> dict:
+        if model not in MODELS:
+            raise ControlError(f"model refused: {model}")
         if not WORKER_RE.fullmatch(worker_id):
             raise ControlError("worker ID must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}")
         with self.condition:
@@ -219,7 +223,7 @@ class Controller:
             admitted = (self.state["config"]["state"] == "enabled" and
                         self._occupied_locked() < self.state["config"]["worker_limit"])
             worker = {
-                "id": worker_id, "seq": self.state["next_seq"],
+                "id": worker_id, "seq": self.state["next_seq"], "model": model,
                 "registered_at": self._timestamp(), "updated_at": self._timestamp(),
                 "manual": "running", "admitted": admitted, "in_flight": 0,
                 "state": "active" if admitted else "limit-waiting", "terminal": None,
@@ -372,8 +376,16 @@ class Controller:
             return affected
 
     def reserve(self, worker_id: str, request_id: str,
-                credits: Decimal = REQUEST_RESERVATION) -> tuple[str, Decimal]:
+                credits: Decimal | None = None) -> tuple[str, Decimal]:
         with self.condition:
+            model = self._worker_locked(worker_id).get("model", MODEL)
+            if credits is None:
+                spec = MODELS[model]
+                # Estimates use catalog prices; settlement always uses actual billing.
+                # Preserve the original DSF reservation for existing callers/state.
+                credits = REQUEST_RESERVATION if model == MODEL else (
+                    Decimal(str(spec["input"])) * spec["contextWindow"]
+                    + Decimal(str(spec["output"])) * 32768) / Decimal(1000000)
             while True:
                 self._rollover_locked()
                 worker = self._worker_locked(worker_id)
@@ -403,7 +415,7 @@ class Controller:
                 month = self.state["current_month"]
                 ledger["reservations"][request_id] = {
                     "worker_id": worker_id, "credits": decimal_string(credits),
-                    "timestamp": self._timestamp(), "model": MODEL,
+                    "timestamp": self._timestamp(), "model": model,
                 }
                 worker["in_flight"] += 1
                 worker["state"] = "in-flight"
@@ -492,7 +504,7 @@ def dispatch(controller: Controller, request: dict) -> dict:
     reason = require_reason(request)
     actor = request.get("actor") or {}
     if action == "register":
-        return controller.register(request["worker_id"], actor, reason)
+        return controller.register(request["worker_id"], actor, reason, request.get("model", MODEL))
     if action == "finish":
         controller.finish(request["worker_id"], request["outcome"], actor, reason)
         return {"ok": True}
@@ -621,12 +633,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if worker_id and tail == "models":
             try:
                 with self.controller.lock:
-                    self.controller._worker_locked(worker_id)
+                    model = self.controller._worker_locked(worker_id).get("model", MODEL)
             except ControlError as exc:
                 self.json_error(404, str(exc))
                 return
             self.json_response(200, {"object": "list", "data": [{
-                "id": MODEL, "object": "model", "owned_by": "melious"}]})
+                "id": model, "object": "model", "owned_by": "melious"}]})
             return
         self.json_error(404, "unsupported endpoint")
 
@@ -649,9 +661,21 @@ class ProxyHandler(BaseHTTPRequestHandler):
         except ValueError:
             self.json_error(400, "request body is not valid JSON")
             return
-        if payload.get("model") != MODEL:
-            self.json_error(400, f"model refused: expected {MODEL}")
+        try:
+            with self.controller.lock:
+                model = self.controller._worker_locked(worker_id).get("model", MODEL)
+        except ControlError as exc:
+            self.json_error(400, str(exc))
             return
+        if not isinstance(payload, dict) or payload.get("model") != model:
+            self.json_error(400, f"model refused: expected {model}")
+            return
+        max_tokens = payload.get("max_tokens", 32768)
+        if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or not 1 <= max_tokens <= 32768:
+            self.json_error(400, "max_tokens must be between 1 and 32768")
+            return
+        payload["max_tokens"] = max_tokens
+        body = json.dumps(payload).encode()
         request_id = f"{worker_id}:{uuid.uuid4().hex}"
         try:
             self.controller.reserve(worker_id, request_id)
@@ -689,7 +713,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     self.wfile.flush()
                 if "text/event-stream" not in content_type:
                     summary.from_json(bytes(raw))
-                if summary.model and summary.model != MODEL:
+                if summary.model and summary.model != model:
                     status = "model-mismatch"
                 else:
                     status = "ok"
@@ -757,6 +781,7 @@ def cli(argv: list[str]) -> int:
     for name in ("pause", "resume", "stop"):
         selection_args(sub.add_parser(name))
     register = sub.add_parser("_register"); register.add_argument("worker_id"); register.add_argument("--reason", required=True)
+    register.add_argument("--model", choices=sorted(MODELS), default=MODEL)
     finish = sub.add_parser("_finish"); finish.add_argument("worker_id"); finish.add_argument("outcome", choices=("completed", "failed")); finish.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
     if args.action in ("pause", "resume", "stop"):

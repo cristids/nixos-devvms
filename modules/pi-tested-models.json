@@ -1,0 +1,8 @@
+{
+  "melious-dsf": {"id":"deepseek-v4.1-flash-1017","contextWindow":1000000,"input":0.30,"output":1.20,"cacheRead":0.30},
+  "melious-glm-5.3": {"id":"glm-5.3","contextWindow":1000000,"input":1.0,"output":3.0,"cacheRead":0.2},
+  "melious-glm-5.3-flash": {"id":"glm-5.3-flash","contextWindow":1000000,"input":0.1,"output":0.4,"cacheRead":0.02},
+  "melious-kimi-k3": {"id":"kimi-k3","contextWindow":1000000,"input":2.85,"output":14.25,"cacheRead":0.71},
+  "melious-kimi-k2.7-code": {"id":"kimi-k2.7-code","contextWindow":256000,"input":0.6,"output":3.6,"cacheRead":0.16},
+  "melious-qwen3.8-max": {"id":"qwen3.8-max","contextWindow":256000,"input":2.4,"output":5.65,"cacheRead":0.59}
+}

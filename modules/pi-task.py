@@ -31,10 +31,9 @@ MODEL_SPECS = {
         "pi_model": "homelab/strata/qwen3.8-flash",
         "event_model": "strata/qwen3.8-flash",
     },
-    "melious-dsf": {
-        "pi_model": "melious/deepseek-v4.1-flash-1017",
-        "event_model": "deepseek-v4.1-flash-1017",
-    },
+    **{alias: {"pi_model": "melious/" + spec["id"], "event_model": spec["id"]}
+       for alias, spec in json.loads(
+           Path(__file__).with_name("pi-tested-models.json").read_text()).items()},
 }
 ALLOWED_BENCHES = {"test", *{f"test{i}" for i in range(1, 8)}}
 W_ROOT = Path("/srv/pi-envs")
@@ -443,12 +442,16 @@ def write_run_models(stage: Path, source: Path, model: str,
                      worker_id: str | None) -> Path:
     validate_model_config(source)
     config = json.loads(source.read_text())
-    if model == "melious-dsf":
+    if model != "local-qwen":
         if not worker_id:
-            raise PolicyError("--worker-id is required for melious-dsf")
+            raise PolicyError("--worker-id is required for Melious models")
         config["providers"]["melious"]["baseUrl"] = (
             f"http://127.0.0.1:5098/w/{worker_id}/v1")
     path = stage / "models.json"
+    provider, model_id = MODEL_SPECS[model]["pi_model"].split("/", 1)
+    selected = config["providers"][provider]
+    selected["models"] = [item for item in selected["models"] if item["id"] == model_id]
+    config["providers"] = {provider: selected}
     path.write_text(json.dumps(config, separators=(",", ":")))
     path.chmod(0o600)
     return path
@@ -891,7 +894,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--model", choices=sorted(MODEL_SPECS), default="local-qwen",
                         help="allowlisted production model (default: local-qwen)")
     parser.add_argument("--worker-id", metavar="ID",
-                        help="stable reviewer-assigned ID (required for melious-dsf)")
+                        help="stable reviewer-assigned ID (required for Melious models)")
     parser.add_argument("--allow", action="append", default=[], metavar="FILE",
                         help="exact project-relative file Pi may change (repeatable)")
     parser.add_argument("--allow-app", action="store_true",
@@ -927,10 +930,10 @@ def main(argv: list[str] | None = None) -> int:
             raise PolicyError("--allow-app is only valid in a disposable W app checkout")
         allowed = validate_allowed(repo, args.allow) if not args.allow_app else set()
         spec = MODEL_SPECS[args.model]
-        if args.model == "melious-dsf" and not args.worker_id:
-            raise PolicyError("--worker-id is required for melious-dsf")
-        if args.model != "melious-dsf" and args.worker_id:
-            raise PolicyError("--worker-id is only valid for melious-dsf")
+        if args.model != "local-qwen" and not args.worker_id:
+            raise PolicyError("--worker-id is required for Melious models")
+        if args.model == "local-qwen" and args.worker_id:
+            raise PolicyError("--worker-id is only valid for Melious models")
         if args.worker_id and not WORKER_RE.fullmatch(args.worker_id):
             raise PolicyError("--worker-id must contain only letters, digits, dot, underscore or dash")
         erp_root = HOME / "development/erpnext"
@@ -956,10 +959,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"pi-task: WARNING: {message}; continuing because --require-web was not set",
                   file=sys.stderr)
         provider_lock = None
-        if args.model == "melious-dsf":
+        if args.model != "local-qwen":
             check_melious_health()
             registration = control_call(
-                "_register", args.worker_id, "--reason",
+                "_register", args.worker_id, "--model", spec["event_model"], "--reason",
                 "start reviewer-approved bounded Pi slice")
             registered_worker = args.worker_id
             admission = registration["state"]

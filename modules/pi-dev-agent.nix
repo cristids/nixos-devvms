@@ -27,9 +27,11 @@ let
     nativeBuildInputs = [ pkgs.makeWrapper pkgs.python3 pkgs.git pkgs.strace config.ompDevAgent.bubblewrap ];
   } ''
     cp ${./pi-task.py} pi-task.py
+    cp ${./pi-tested-models.json} pi-tested-models.json
     cp ${./test_pi_task.py} test_pi_task.py
     ${pkgs.python3}/bin/python3 -m unittest -v test_pi_task.py
     install -Dm755 pi-task.py $out/libexec/pi-task.py
+    install -Dm644 pi-tested-models.json $out/libexec/pi-tested-models.json
     makeWrapper ${pkgs.python3}/bin/python3 $out/bin/pi-task \
       --add-flags $out/libexec/pi-task.py \
       --prefix PATH : ${lib.makeBinPath [
@@ -47,11 +49,13 @@ let
     nativeBuildInputs = [ pkgs.python3 ];
   } ''
     cp ${./pi-task-control.py} pi-task-control.py
+    cp ${./pi-tested-models.json} pi-tested-models.json
     cp ${./test_pi_task_control.py} test_control.py
     ${pkgs.python3}/bin/python3 -m unittest -v test_control.py
     substituteInPlace pi-task-control.py \
       --replace-fail '#!/usr/bin/env python3' '#!${pkgs.python3}/bin/python3'
     install -Dm755 pi-task-control.py $out/bin/pi-task-control
+    install -Dm644 pi-tested-models.json $out/bin/pi-tested-models.json
   '';
 
   erpnextBroker = pkgs.runCommand "pi-task-erpnext-broker" {
@@ -97,22 +101,25 @@ let
         }];
       };
       melious = {
-        name = "Melious DSF (credential-isolating localhost proxy)";
+        name = "Melious tested coding models (localhost proxy)";
         # The wrapper replaces this fail-closed URL with /w/WORKER_ID/v1.
         baseUrl = "http://127.0.0.1:5098/w/unregistered/v1";
         api = "openai-completions";
         apiKey = "credential-held-by-local-proxy";
         inherit compat;
-        models = [{
-          id = "deepseek-v4.1-flash-1017";
+        models = map (model: {
+          id = model.id;
           reasoning = true;
-          contextWindow = 1000000;
+          contextWindow = model.contextWindow;
           maxTokens = 32768;
           # Verified bake-off mapping, credits per 1M tokens. The persistent
           # control service reserves and settles every worker-scoped request.
-          cost = { input = 0.30; output = 1.20; cacheRead = 0.30; cacheWrite = 0; };
-          samplingParams = { temperature = 1.0; top_p = 0.95; };
-        }];
+          cost = { inherit (model) input output cacheRead; cacheWrite = 0; };
+          samplingParams = {
+            temperature = 1.0;
+            top_p = if builtins.elem model.id [ "glm-5.3" "glm-5.3-flash" "kimi-k3" ] then 1.0 else 0.95;
+          };
+        }) (builtins.attrValues (builtins.fromJSON (builtins.readFile ./pi-tested-models.json)));
       };
     };
   });

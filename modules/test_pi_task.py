@@ -432,11 +432,12 @@ Path("config/pids/probe").write_text("pid")
             self.assertEqual({"state": "active"}, pi_task.control_call("status"))
         self.assertEqual(pi_task.PI_TASK_CONTROL, called.call_args.args[0][0])
 
-    def test_model_config_exposes_exactly_two_production_models(self):
+    def test_model_config_exposes_exactly_tested_production_models(self):
         path = pi_task.HOME / "models.json"
         path.write_text(json.dumps({"providers": {
             "homelab": {"models": [{"id": "strata/qwen3.8-flash"}]},
-            "melious": {"models": [{"id": "deepseek-v4.1-flash-1017"}]},
+            "melious": {"models": [{"id": spec["event_model"]}
+                for alias, spec in pi_task.MODEL_SPECS.items() if alias != "local-qwen"]},
         }}))
         pi_task.validate_model_config(path)
         data = json.loads(path.read_text())
@@ -459,7 +460,8 @@ Path("config/pids/probe").write_text("pid")
             "homelab": {"baseUrl": "http://local/v1", "models": [
                 {"id": "strata/qwen3.8-flash"}]},
             "melious": {"baseUrl": "http://127.0.0.1:5098/w/unregistered/v1",
-                         "models": [{"id": "deepseek-v4.1-flash-1017"}]},
+                         "models": [{"id": spec["event_model"]}
+                for alias, spec in pi_task.MODEL_SPECS.items() if alias != "local-qwen"]},
         }}))
         stage = pi_task.HOME / "stage-models"
         stage.mkdir()
@@ -467,7 +469,7 @@ Path("config/pids/probe").write_text("pid")
         config = json.loads(rendered.read_text())
         self.assertEqual("http://127.0.0.1:5098/w/worker-9/v1",
                          config["providers"]["melious"]["baseUrl"])
-        self.assertEqual(2, sum(len(value["models"])
+        self.assertEqual(1, sum(len(value["models"])
                                 for value in config["providers"].values()))
 
     def test_trusted_providers_share_full_git_tool_and_mcp_capabilities(self):

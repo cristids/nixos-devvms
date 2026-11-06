@@ -6,15 +6,21 @@ diff review, and final commit. Workers never commit.
 
 ## Models and live controls
 
-Only `local-qwen` (the default, exact model
-`homelab/strata/qwen3.8-flash`) and `melious-dsf` (exact model
-`melious/deepseek-v4.1-flash-1017`) are exposed. Every delegated batch has
+Only tested coding models are exposed. `local-qwen` remains the default
+(`homelab/strata/qwen3.8-flash`). External selections are `melious-dsf`
+(`deepseek-v4.1-flash-1017`), `melious-glm-5.3`, `melious-glm-5.3-flash`,
+`melious-kimi-k3`, `melious-kimi-k2.7-code`, and `melious-qwen3.8-max`.
+All external models share the same cap and worker pool, not separate budgets.
+Each external launch requires `--model ALIAS --worker-id UNIQUE_ID`.
+The proxy pins that worker to its selected model; its Pi config exposes only
+that model, without fallback. Existing DSF IDs/callers remain compatible.
+Every delegated batch has
 exactly one local-Qwen lane. The standing authorization is that lane plus zero
-to five DSF lanes within the live 200-credit cap; an ordinary batch inside those
+to five external lanes within the live 200-credit cap; an ordinary batch inside those
 bounds does not need fresh approval. Changing cap or worker limit remains a
 governance action taken only when Cristian directs it.
 
-Local Qwen has one global exclusive lane. DSF uses two independent persistent
+Local Qwen has one global exclusive lane. Melious uses two independent persistent
 controls: `monthly_cap` starts at 200 credits and `worker_limit` starts at 5.
 Neither value is compiled as a maximum: the reviewer can set the limit to zero
 or any nonnegative integer and can raise or lower the cap. Changes survive
@@ -22,7 +28,7 @@ service restarts. A worker blocked by the budget, limit, or a manual pause waits
 without spending; its Pi process and worktree remain alive. In-flight requests
 may finish when a control is lowered.
 
-Every DSF lane needs a stable reviewer-assigned `--worker-id`. Each provider
+Every external lane needs a stable reviewer-assigned `--worker-id`. Each provider
 request uses a worker-scoped loopback URL and passes through `pi-task-control`,
 which reserves credit atomically before forwarding it and settles against the
 provider-reported charge. Missing usage is charged conservatively. State rolls
@@ -30,6 +36,11 @@ over on Europe/Bucharest calendar months and stale reservations are recovered
 conservatively after restart. Audit records contain control/request metadata,
 actor/session/pane when available, reason, and old/new state—never prompts,
 source, responses, credentials, or secrets.
+
+Model-specific reservations use declared context, the configured 32768 output
+token ceiling, and catalog token prices (2026-11-07). These are estimates, not a
+guaranteed provider-price ceiling: routing prices may differ. Actual billing is
+settled even if it exceeds the reservation. Pi display prices are estimates too.
 
 Read status at any time:
 
