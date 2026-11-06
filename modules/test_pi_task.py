@@ -45,85 +45,6 @@ class PiTaskPolicyTests(unittest.TestCase):
         self.bound_sockets.append(bound)
         return path
 
-    def run_external_privacy_probe(self, workspace, head_blob, historical_blob):
-        bwrap = shutil.which("bwrap")
-        git = str(Path(shutil.which("git")).resolve())
-        python = str(Path(sys.executable).resolve())
-        script = r'''
-import pathlib
-import subprocess
-
-assert pathlib.Path("allowed.txt").is_file()
-assert not pathlib.Path("secret-head.txt").exists()
-assert not pathlib.Path("historical.txt").exists()
-assert not pathlib.Path(".git").exists()
-assert not any(path.name == ".git" for path in pathlib.Path(".").rglob(".git"))
-commands = [
-    [GIT, "rev-parse", "HEAD"],
-    [GIT, "show", "HEAD:secret-head.txt"],
-    [GIT, "cat-file", "-p", HEAD_BLOB],
-    [GIT, "cat-file", "-p", HISTORICAL_BLOB],
-    [GIT, "log", "-p", "--all"],
-    [GIT, "config", "--local", "--list", "--show-origin"],
-    [GIT, "remote", "-v"],
-    [GIT, "rev-parse", "--git-path", "objects/info/alternates"],
-    [GIT, "fsck", "--full"],
-]
-for command in commands:
-    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    assert result.returncode != 0, (command, result.stdout, result.stderr)
-pathlib.Path("allowed.txt").write_text("external approved edit\n")
-'''.replace("GIT", repr(git)).replace("HEAD_BLOB", repr(head_blob)).replace(
-            "HISTORICAL_BLOB", repr(historical_blob))
-        result = subprocess.run([
-            bwrap, "--die-with-parent", "--unshare-pid", "--unshare-ipc",
-            "--unshare-uts", "--new-session", "--clearenv",
-            "--ro-bind", "/nix/store", "/nix/store", "--proc", "/proc",
-            "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/work",
-            "--bind", str(workspace), "/work", "--chdir", "/work",
-            "--", python, "-c", script,
-        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        self.assertEqual(0, result.returncode, result.stderr)
-
-    def run_external_channel_probe(self, context7_socket, proxy_socket):
-        bwrap = shutil.which("bwrap")
-        python = str(Path(sys.executable).resolve())
-        script = r'''
-import pathlib
-import socket
-
-assert pathlib.Path("/run/user/1000/pi-task-context7.sock").is_socket()
-assert pathlib.Path("/run/pi-task-control/proxy.sock").is_socket()
-for forbidden in (
-    "/run/user/1000/tuios.sock",
-    "/run/user/1000/pi-task-erpnext-test.sock",
-    "/nix/var/nix/daemon-socket/socket",
-):
-    assert not pathlib.Path(forbidden).exists(), forbidden
-    probe = socket.socket(socket.AF_UNIX)
-    try:
-        probe.connect(forbidden)
-    except (FileNotFoundError, ConnectionRefusedError):
-        pass
-    else:
-        raise AssertionError(f"forbidden local channel connected: {forbidden}")
-for port in (22, 8000, 8010, 5098):
-    probe = socket.socket()
-    probe.settimeout(0.1)
-    assert probe.connect_ex(("127.0.0.1", port)) != 0, port
-'''
-        result = subprocess.run([
-            bwrap, "--die-with-parent", "--unshare-pid", "--unshare-ipc",
-            "--unshare-uts", "--unshare-net", "--new-session", "--clearenv",
-            "--ro-bind", "/nix/store", "/nix/store", "--proc", "/proc", "--dev", "/dev",
-            "--dir", "/run", "--dir", "/run/user", "--dir", "/run/user/1000",
-            "--dir", "/run/pi-task-control",
-            "--ro-bind", str(context7_socket), "/run/user/1000/pi-task-context7.sock",
-            "--ro-bind", str(proxy_socket), "/run/pi-task-control/proxy.sock",
-            "--", python, "-c", script,
-        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        self.assertEqual(0, result.returncode, result.stderr)
-
     def test_allowed_change_passes(self):
         before = pi_task.snapshot(self.repo)
         (self.repo / "allowed.txt").write_text("new\n")
@@ -234,6 +155,9 @@ for port in (22, 8000, 8010, 5098):
         with self.assertRaises(SystemExit):
             pi_task.parse_args(["--model", "melious/deepseek-v4.1-flash",
                                 "--success", "true", "brief"])
+        with self.assertRaises(SystemExit):
+            pi_task.parse_args(["--model", "melious-dsf", "--read", "src",
+                                "--success", "true", "brief"])
 
     def test_worker_id_is_explicitly_scoped_to_dsf(self):
         dsf = pi_task.parse_args([
@@ -280,181 +204,88 @@ for port in (22, 8000, 8010, 5098):
         self.assertEqual(2, sum(len(value["models"])
                                 for value in config["providers"].values()))
 
-    def test_external_workspace_applies_only_allowed_files(self):
-        stage = pi_task.HOME / "stage"
+    def test_trusted_providers_share_full_git_tool_and_mcp_capabilities(self):
+        runtime = pi_task.HOME / "runtime"
+        tuios = self.bind_socket(runtime / "tuios/tuios.sock")
+        erpnext = self.bind_socket(runtime / "pi-task-erpnext-test.sock")
+        agent = pi_task.HOME / ".pi/agent"
+        (agent / "extensions").mkdir(parents=True)
+        (agent / "settings.json").write_text("{}\n")
+        (agent / "extensions/tuios-agent-state.ts").write_text("// coordination integration\n")
+        stage = pi_task.HOME / "channel-stage"
         stage.mkdir()
-        workspace = pi_task.stage_external_workspace(
-            self.repo, stage, {"allowed.txt", "other.txt"})
-        before = pi_task.tree_snapshot(workspace)
-        (workspace / "allowed.txt").write_text("external change\n")
-        self.assertEqual([], pi_task.tree_violations(
-            before, pi_task.tree_snapshot(workspace), {"allowed.txt"}))
-        pi_task.apply_external_changes(workspace, self.repo, {"allowed.txt"})
-        self.assertEqual("external change\n", (self.repo / "allowed.txt").read_text())
-        (workspace / "other.txt").write_text("bad\n")
-        self.assertIn("out-of-scope external workspace path changed: other.txt",
-                      pi_task.tree_violations(before, pi_task.tree_snapshot(workspace),
-                                              {"allowed.txt"}))
+        models = stage / "models.json"
+        models.write_text("{}\n")
+        layout = pi_task.git_layout(self.repo)
+        old_env = {key: os.environ.get(key) for key in (
+            "XDG_RUNTIME_DIR", "TUIOS_SOCKET", "TUIOS_PANE_ID", "TUIOS_PANE_TOKEN")}
+        os.environ.update({
+            "XDG_RUNTIME_DIR": str(runtime), "TUIOS_SOCKET": str(tuios),
+            "TUIOS_PANE_ID": "pane-test", "TUIOS_PANE_TOKEN": "token-test",
+        })
+        try:
+            qwen_mcp, qwen_sockets = pi_task.write_mcp(stage, "test", "qwen-mcp.json")
+            dsf_mcp, dsf_sockets = pi_task.write_mcp(stage, "test", "dsf-mcp.json")
+            self.assertEqual(qwen_mcp.read_text(), dsf_mcp.read_text())
+            config = json.loads(qwen_mcp.read_text())["mcpServers"]
+            self.assertEqual({"context7", "tuios", "web", "erpnext"}, set(config))
+            self.assertEqual({"searxng_*": "direct", "web_url_read": "direct"},
+                             config["web"]["toolExposure"])
+            self.assertEqual([erpnext], qwen_sockets)
+            self.assertEqual(qwen_sockets, dsf_sockets)
 
-    def test_dsf_read_scope_rejects_escape_and_accepts_approved_directory(self):
-        src = self.repo / "src"
-        src.mkdir()
-        (src / "module.py").write_text("pass\n")
-        readable = pi_task.validate_read_scope(self.repo, ["src"], {"allowed.txt"})
-        self.assertEqual({"allowed.txt", "src"}, readable)
-        with self.assertRaises(pi_task.PolicyError):
-            pi_task.validate_read_scope(self.repo, ["../secret"], {"allowed.txt"})
+            qwen_args = pi_task.sandbox_args(
+                self.repo, layout, models, qwen_mcp, qwen_sockets)
+            dsf_args = pi_task.sandbox_args(
+                self.repo, layout, models, qwen_mcp, dsf_sockets)
+            self.assertEqual(qwen_args, dsf_args)
+            model_args = ["-p", "--model", "placeholder"]
+            self.assertEqual(
+                pi_task.pi_command(pi_task.MODEL_SPECS["local-qwen"], model_args),
+                pi_task.pi_command(pi_task.MODEL_SPECS["melious-dsf"], model_args),
+            )
+            serialized = "\n".join(qwen_args)
+            self.assertNotIn("--unshare-net", qwen_args)
+            for required in (str(tuios), str(erpnext), str(layout.dotgit),
+                             "TUIOS_SOCKET", "TUIOS_PANE_TOKEN",
+                             "tuios-agent-state.ts", "/etc", "/bin", "/usr",
+                             "SSL_CERT_FILE", "NIX_SSL_CERT_FILE"):
+                self.assertIn(required, serialized)
+        finally:
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
 
-    def test_external_privacy_view_rejects_even_in_repo_symlinks(self):
-        (self.repo / "private.txt").write_text("not approved\n")
-        (self.repo / "approved-link").symlink_to("private.txt")
-        stage = pi_task.HOME / "privacy-stage"
-        stage.mkdir()
-        with self.assertRaisesRegex(pi_task.PolicyError, "symlinks are not allowed"):
-            pi_task.stage_external_workspace(self.repo, stage, {"approved-link"})
-
-    def test_external_privacy_view_rejects_nested_git_metadata(self):
-        nested = self.repo / "vendor/component/.git"
-        nested.mkdir(parents=True)
-        (nested / "config").write_text("private nested repository metadata\n")
-        stage = pi_task.HOME / "nested-git-stage"
-        stage.mkdir()
-        with self.assertRaisesRegex(pi_task.PolicyError, "Git metadata is forbidden"):
-            pi_task.stage_external_workspace(self.repo, stage, {"vendor"})
-
-    def test_external_sandbox_has_no_head_history_config_objects_or_alternates(self):
-        (self.repo / "historical.txt").write_text("DELETED-HISTORY-CANARY\n")
+    def test_full_git_history_is_visible_in_normal_and_linked_worktrees(self):
+        (self.repo / "historical.txt").write_text("HISTORY-CANARY\n")
         subprocess.run(["git", "-C", str(self.repo), "add", "historical.txt"], check=True)
         subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "history canary"],
                        check=True)
         historical_blob = subprocess.check_output([
             "git", "-C", str(self.repo), "rev-parse", "HEAD:historical.txt"], text=True).strip()
         subprocess.run(["git", "-C", str(self.repo), "rm", "-q", "historical.txt"], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "delete history canary"],
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "delete canary"],
                        check=True)
-        (self.repo / "secret-head.txt").write_text("UNAPPROVED-HEAD-CANARY\n")
-        subprocess.run(["git", "-C", str(self.repo), "add", "secret-head.txt"], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "head canary"],
-                       check=True)
-        head_blob = subprocess.check_output([
-            "git", "-C", str(self.repo), "rev-parse", "HEAD:secret-head.txt"], text=True).strip()
-        subprocess.run(["git", "-C", str(self.repo), "remote", "add", "origin",
-                        "https://ORIGIN-CONFIG-CANARY.invalid/private.git"], check=True)
-        alternate = pi_task.HOME / "scratch/alternate.git"
-        subprocess.run(["git", "init", "--bare", "-q", str(alternate)], check=True)
-        alternates = self.repo / ".git/objects/info/alternates"
-        alternates.write_text(str(alternate / "objects") + "\n")
-
-        linked = pi_task.HOME / "scratch/privacy-linked"
+        linked = pi_task.HOME / "scratch/capability-linked"
         subprocess.run(["git", "-C", str(self.repo), "worktree", "add", "-qb",
-                        "privacy-linked", str(linked)], check=True)
+                        "capability-linked", str(linked)], check=True)
+        git_bin = str(Path(shutil.which("git")).resolve())
         for label, checkout in (("normal", self.repo), ("linked", linked)):
             with self.subTest(checkout=label):
                 layout = pi_task.git_layout(checkout)
-                before = pi_task.snapshot(checkout)
-                stage = pi_task.HOME / f"privacy-{label}"
-                stage.mkdir()
-                workspace = pi_task.stage_external_workspace(
-                    checkout, stage, {"allowed.txt"})
-                workspace_before = pi_task.tree_snapshot(workspace)
-                mounts = pi_task.project_mount_args(checkout, layout, workspace)
-                mount_text = "\n".join(mounts)
-                self.assertIn(str(workspace), mount_text)
-                self.assertNotIn(str(layout.dotgit), mount_text)
-                self.assertNotIn(str(layout.gitdir), mount_text)
-                self.assertNotIn(str(layout.common), mount_text)
-                self.run_external_privacy_probe(workspace, head_blob, historical_blob)
-                self.assertEqual([], pi_task.tree_violations(
-                    workspace_before, pi_task.tree_snapshot(workspace), {"allowed.txt"}))
-                self.assertEqual([], pi_task.policy_violations(before, pi_task.snapshot(checkout),
-                                                               set()))
-                pi_task.apply_external_changes(workspace, checkout, {"allowed.txt"})
-                self.assertEqual("external approved edit\n",
-                                 (checkout / "allowed.txt").read_text())
-                self.assertEqual([], pi_task.policy_violations(
-                    before, pi_task.snapshot(checkout), {"allowed.txt"}))
-                self.assertEqual("UNAPPROVED-HEAD-CANARY\n",
-                                 (checkout / "secret-head.txt").read_text())
-
-    def test_external_has_only_context7_and_no_local_data_channels(self):
-        runtime = pi_task.HOME / "runtime"
-        context7 = self.bind_socket(runtime / "pi-task-context7.sock")
-        tuios = self.bind_socket(runtime / "tuios.sock")
-        erpnext = self.bind_socket(runtime / "pi-task-erpnext-test.sock")
-        proxy = self.bind_socket(runtime / "melious-proxy.sock")
-        agent = pi_task.HOME / ".pi/agent"
-        (agent / "extensions").mkdir(parents=True)
-        (agent / "settings.json").write_text("{}\n")
-        (agent / "extensions/tuios-agent-state.ts").write_text("// private integration\n")
-        stage = pi_task.HOME / "channel-stage"
-        stage.mkdir()
-        models = stage / "models.json"
-        models.write_text("{}\n")
-        workspace = pi_task.stage_external_workspace(self.repo, stage, {"allowed.txt"})
-        layout = pi_task.git_layout(self.repo)
-        old_env = {key: os.environ.get(key) for key in (
-            "XDG_RUNTIME_DIR", "TUIOS_SOCKET", "TUIOS_PANE_ID", "TUIOS_PANE_TOKEN")}
-        old_proxy = pi_task.MELIOUS_PROXY_SOCKET
-        os.environ.update({
-            "XDG_RUNTIME_DIR": str(runtime), "TUIOS_SOCKET": str(tuios),
-            "TUIOS_PANE_ID": "pane-private", "TUIOS_PANE_TOKEN": "token-private",
-        })
-        pi_task.MELIOUS_PROXY_SOCKET = proxy
-        try:
-            external_mcp, external_sockets = pi_task.write_mcp(
-                stage, "test", True, "external-mcp.json")
-            external_config = json.loads(external_mcp.read_text())["mcpServers"]
-            self.assertEqual({"context7"}, set(external_config))
-            serialized = external_mcp.read_text()
-            self.assertNotIn("tuios", serialized.lower())
-            self.assertNotIn("erpnext", serialized.lower())
-            self.assertNotIn(str(tuios), serialized)
-            self.assertNotIn(str(erpnext), serialized)
-            self.assertEqual([context7], external_sockets)
-
-            external_args = pi_task.sandbox_args(
-                self.repo, layout, models, external_mcp, external_sockets, True, workspace)
-            external_text = "\n".join(external_args)
-            self.assertIn("--unshare-net", external_args)
-            self.assertIn(str(context7), external_args)
-            self.assertIn(str(proxy), external_args)
-            self.assertNotIn(str(tuios), external_text)
-            self.assertNotIn(str(erpnext), external_text)
-            self.assertNotIn("TUIOS_SOCKET", external_args)
-            self.assertNotIn("TUIOS_PANE_TOKEN", external_args)
-            self.assertNotIn("tuios-agent-state.ts", external_text)
-            self.assertNotIn("NIX_REMOTE", external_args)
-            self.assertNotIn("/nix/var/nix/daemon-socket", external_text)
-            self.assertNotIn("/etc", external_args)
-            self.assertNotIn("/bin", external_args)
-            self.assertNotIn("/usr", external_args)
-            self.assertNotIn("SSL_CERT_FILE", external_args)
-            self.assertNotIn("NIX_SSL_CERT_FILE", external_args)
-            self.run_external_channel_probe(context7, proxy)
-
-            local_mcp, local_sockets = pi_task.write_mcp(
-                stage, "test", False, "local-mcp.json")
-            local_config = json.loads(local_mcp.read_text())["mcpServers"]
-            self.assertEqual({"context7", "tuios", "erpnext"}, set(local_config))
-            self.assertEqual([erpnext], local_sockets)
-            local_args = pi_task.sandbox_args(
-                self.repo, layout, models, local_mcp, local_sockets, False)
-            local_text = "\n".join(local_args)
-            self.assertNotIn("--unshare-net", local_args)
-            self.assertIn(str(tuios), local_text)
-            self.assertIn(str(erpnext), local_text)
-            self.assertIn("TUIOS_SOCKET", local_args)
-            self.assertIn("TUIOS_PANE_TOKEN", local_args)
-            self.assertIn("tuios-agent-state.ts", local_text)
-            self.assertIn("/etc", local_args)
-            self.assertIn("SSL_CERT_FILE", local_args)
-        finally:
-            pi_task.MELIOUS_PROXY_SOCKET = old_proxy
-            for key, value in old_env.items():
-                if value is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = value
+                mounts = pi_task.project_mount_args(checkout, layout)
+                result = subprocess.run([
+                    shutil.which("bwrap"), "--die-with-parent", "--unshare-pid",
+                    "--unshare-ipc", "--unshare-uts", "--new-session", "--clearenv",
+                    "--ro-bind", "/nix/store", "/nix/store", "--proc", "/proc",
+                    "--dev", "/dev", "--tmpfs", "/tmp", *mounts,
+                    "--chdir", str(checkout), "--", git_bin, "cat-file", "-p",
+                    historical_blob,
+                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual("HISTORY-CANARY\n", result.stdout)
 
     def test_accounting_refuses_observed_model_fallback(self):
         events = pi_task.HOME / "events.jsonl"

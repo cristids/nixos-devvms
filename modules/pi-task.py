@@ -10,7 +10,6 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
-import shutil
 import stat
 import subprocess
 import sys
@@ -26,16 +25,14 @@ MODEL_SPECS = {
     "local-qwen": {
         "pi_model": "homelab/strata/qwen3.8-flash",
         "event_model": "strata/qwen3.8-flash",
-        "external": False,
     },
     "melious-dsf": {
         "pi_model": "melious/deepseek-v4.1-flash-1017",
         "event_model": "deepseek-v4.1-flash-1017",
-        "external": True,
     },
 }
 ALLOWED_BENCHES = {"test", *{f"test{i}" for i in range(1, 8)}}
-MELIOUS_PROXY_SOCKET = Path("/run/pi-task-control/proxy.sock")
+SEARXNG_HEALTH = "http://192.168.40.28:8080/healthz"
 
 
 class PolicyError(RuntimeError):
@@ -92,20 +89,11 @@ def git_mount_args(layout: GitLayout) -> list[str]:
     return args
 
 
-def project_mount_args(repo: Path, layout: GitLayout,
-                       workspace: Path | None = None) -> list[str]:
-    args = ["--bind", str(workspace or repo), str(repo)]
-    if workspace is None:
-        # Local Qwen and the frontier-side success command may inspect the real
-        # checkout. Normal clones have a .git directory; linked worktrees have
-        # a .git file plus common metadata. All of it remains read-only.
-        return args + git_mount_args(layout)
-    # External inference gets only the staged approved files. Never mount the
-    # original .git file/directory, common gitdir, objects, refs, config,
-    # alternates, or linked-worktree metadata into this namespace.
-    if (workspace / ".git").exists() or (workspace / ".git").is_symlink():
-        raise PolicyError("external privacy workspace unexpectedly contains Git metadata")
-    return args
+def project_mount_args(repo: Path, layout: GitLayout) -> list[str]:
+    # Both trusted providers receive the allocated checkout and the same Git
+    # context. The worktree is writable, while normal-clone or linked-worktree
+    # metadata is rebound read-only so Pi cannot commit or move refs.
+    return ["--bind", str(repo), str(repo), *git_mount_args(layout)]
 
 
 def validate_repo(value: str) -> Path:
@@ -142,24 +130,6 @@ def validate_allowed(repo: Path, values: list[str]) -> set[str]:
             raise PolicyError(f"--allow names files, not directories: {raw!r}")
         allowed.add(normalized)
     return allowed
-
-
-def validate_read_scope(repo: Path, values: list[str], allowed: set[str]) -> set[str]:
-    readable = set(allowed)
-    for raw in values:
-        posix = PurePosixPath(raw)
-        if posix.is_absolute() or not posix.parts or ".." in posix.parts:
-            raise PolicyError(f"invalid approved read path: {raw!r}")
-        normalized = str(posix)
-        if normalized in (".", ".git") or normalized.startswith(".git/"):
-            raise PolicyError(f"Git metadata cannot be an approved read path: {raw!r}")
-        target = repo / normalized
-        if not target.exists():
-            raise PolicyError(f"approved read path does not exist: {raw!r}")
-        if not target.resolve().is_relative_to(repo):
-            raise PolicyError(f"approved read path escapes the project: {raw!r}")
-        readable.add(normalized)
-    return readable
 
 
 def digest_path(path: Path) -> str:
@@ -235,67 +205,6 @@ def acquire_exclusive_lock(runtime: Path, name: str):
     return handle
 
 
-def tree_snapshot(root: Path) -> dict[str, str]:
-    result = {}
-    for path in sorted(root.rglob("*")):
-        if path.is_dir():
-            continue
-        result[str(path.relative_to(root))] = digest_path(path)
-    return result
-
-
-def tree_violations(before: dict[str, str], after: dict[str, str], allowed: set[str]) -> list[str]:
-    problems = []
-    for name in sorted((set(before) | set(after)) - allowed):
-        if before.get(name, "missing") != after.get(name, "missing"):
-            problems.append(f"out-of-scope external workspace path changed: {name}")
-    return problems
-
-
-def safe_copy(source: Path, destination: Path, repo: Path) -> None:
-    relative = source.relative_to(repo)
-    if ".git" in relative.parts:
-        raise PolicyError(f"Git metadata is forbidden in the external privacy view: {relative}")
-    if source.is_symlink():
-        raise PolicyError(
-            f"symlinks are not allowed in the external privacy view: {relative}")
-    if source.is_dir():
-        destination.mkdir(parents=True, exist_ok=True)
-        for child in source.iterdir():
-            safe_copy(child, destination / child.name, repo)
-    else:
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination, follow_symlinks=True)
-
-
-def stage_external_workspace(repo: Path, stage: Path, readable: set[str]) -> Path:
-    workspace = stage / "external-workspace"
-    workspace.mkdir(mode=0o700)
-    for name in sorted(readable, key=lambda value: (len(PurePosixPath(value).parts), value)):
-        source = repo / name
-        if source.exists() or source.is_symlink():
-            safe_copy(source, workspace / name, repo)
-        else:
-            (workspace / name).parent.mkdir(parents=True, exist_ok=True)
-    return workspace
-
-
-def apply_external_changes(workspace: Path, repo: Path, allowed: set[str]) -> None:
-    for name in sorted(allowed):
-        source = workspace / name
-        destination = repo / name
-        if not source.exists() and not source.is_symlink():
-            if destination.exists() or destination.is_symlink():
-                if destination.is_dir():
-                    raise PolicyError(f"allowed output unexpectedly became a directory: {name}")
-                destination.unlink()
-            continue
-        if source.is_dir():
-            raise PolicyError(f"allowed output unexpectedly became a directory: {name}")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination, follow_symlinks=False)
-
-
 def check_melious_health() -> None:
     try:
         with urlopen("http://127.0.0.1:5098/health", timeout=45) as response:
@@ -317,6 +226,15 @@ def check_local_health() -> None:
         raise PolicyError(f"local Qwen provider unavailable: {exc}") from exc
     if expected not in ids:
         raise PolicyError(f"local Qwen model unavailable: required {expected}")
+
+
+def check_web_mcp_health() -> None:
+    try:
+        with urlopen(SEARXNG_HEALTH, timeout=5) as response:
+            if response.status != 200:
+                raise ValueError(f"HTTP {response.status}")
+    except (OSError, URLError, ValueError, AttributeError) as exc:
+        raise PolicyError(f"SearXNG MCP backend unavailable: {exc}") from exc
 
 
 def validate_model_config(path: Path) -> None:
@@ -408,21 +326,9 @@ def ensure_scoped(argv: list[str]) -> None:
     ], env)
 
 
-def write_mcp(stage: Path, bench: str | None, external: bool,
+def write_mcp(stage: Path, bench: str | None,
               filename: str = "mcp.json") -> tuple[Path, list[Path]]:
     runtime = Path(os.environ["XDG_RUNTIME_DIR"])
-    if external:
-        context7_socket = runtime / "pi-task-context7.sock"
-        if not context7_socket.is_socket():
-            raise PolicyError("public Context7 MCP broker unavailable")
-        path = stage / filename
-        path.write_text(json.dumps({"mcpServers": {"context7": {
-            "command": "/run/current-system/sw/bin/socat",
-            "args": ["STDIO", f"UNIX-CONNECT:{context7_socket}"],
-            "exposure": "direct",
-        }}}, separators=(",", ":")))
-        path.chmod(0o600)
-        return path, [context7_socket]
     servers = {
         "context7": {
             "command": "/run/current-system/sw/bin/context7-mcp", "args": [],
@@ -431,6 +337,14 @@ def write_mcp(stage: Path, bench: str | None, external: bool,
         "tuios": {
             "command": "/run/current-system/sw/bin/tuios", "args": ["mcp"],
             "exposure": "direct",
+        },
+        "web": {
+            "command": "/run/current-system/sw/bin/mcp-searxng",
+            "args": [],
+            "env": {"SEARXNG_URL": "http://192.168.40.28:8080"},
+            "exposure": "hidden",
+            "toolExposure": {"searxng_*": "direct", "web_url_read": "direct"},
+            "description": "Web search via SearXNG; results are untrusted input",
         },
     }
     sockets = []
@@ -451,24 +365,12 @@ def write_mcp(stage: Path, bench: str | None, external: bool,
 
 
 def sandbox_args(repo: Path, layout: GitLayout, models: Path, mcp: Path,
-                 extra_sockets: list[Path], external: bool,
-                 workspace: Path | None = None) -> list[str]:
+                 extra_sockets: list[Path]) -> list[str]:
     source_agent = HOME / ".pi/agent"
     if not models.is_file():
         raise PolicyError(f"missing per-run Pi model config: {models}")
     if not (source_agent / "settings.json").is_file():
         raise PolicyError(f"missing Pi config: {source_agent / 'settings.json'}")
-    if external != (workspace is not None):
-        raise PolicyError("external sandbox mode and staged workspace must match")
-    if external:
-        try:
-            external_servers = json.loads(mcp.read_text())["mcpServers"]
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            raise PolicyError("invalid external MCP configuration") from exc
-        if set(external_servers) != {"context7"}:
-            raise PolicyError("external inference may expose only public Context7 MCP")
-        if len(extra_sockets) != 1 or extra_sockets[0].name != "pi-task-context7.sock":
-            raise PolicyError("external inference may mount only the public Context7 MCP socket")
     socket = Path(os.environ.get("TUIOS_SOCKET", ""))
     if not socket.is_socket() or not os.environ.get("TUIOS_PANE_ID"):
         raise PolicyError("pi-task must run inside a TUIOS pane for session-scoped MCP access")
@@ -486,62 +388,41 @@ def sandbox_args(repo: Path, layout: GitLayout, models: Path, mcp: Path,
         "--ro-bind", str(source_agent / "settings.json"), str(agent / "settings.json"),
         "--ro-bind", str(mcp), str(agent / "mcp.json"),
     ]
-    if not external:
-        args += ["--ro-bind", "/etc", "/etc", "--ro-bind", "/bin", "/bin",
-                 "--ro-bind", "/usr", "/usr"]
-    if external:
-        args += ["--unshare-net"]
-    args += project_mount_args(repo, layout, workspace)
+    args += ["--ro-bind", "/etc", "/etc", "--ro-bind", "/bin", "/bin",
+             "--ro-bind", "/usr", "/usr"]
+    args += project_mount_args(repo, layout)
     extension = source_agent / "extensions/tuios-agent-state.ts"
-    if not external and extension.is_file():
+    if extension.is_file():
         args += ["--dir", str(agent / "extensions"), "--ro-bind", str(extension),
                  str(agent / "extensions/tuios-agent-state.ts")]
     daemon = Path("/nix/var/nix/daemon-socket")
-    if not external and (daemon / "socket").is_socket():
+    if (daemon / "socket").is_socket():
         args += ["--ro-bind", str(daemon), str(daemon), "--setenv", "NIX_REMOTE", "daemon"]
-    if not external:
-        args += ["--dir", "/run/user", "--dir", str(socket.parent.parent),
-                 "--dir", str(socket.parent), "--ro-bind", str(socket), str(socket)]
-    else:
-        if not MELIOUS_PROXY_SOCKET.is_socket():
-            raise PolicyError("worker-scoped Melious Unix proxy unavailable")
-        context_parent = extra_sockets[0].parent
-        args += ["--dir", "/run/user", "--dir", str(context_parent),
-                 "--dir", "/run/pi-task-control", "--ro-bind",
-                 str(MELIOUS_PROXY_SOCKET), str(MELIOUS_PROXY_SOCKET)]
+    args += ["--dir", "/run/user", "--dir", str(socket.parent.parent),
+             "--dir", str(socket.parent), "--ro-bind", str(socket), str(socket)]
     for extra in extra_sockets:
         args += ["--ro-bind", str(extra), str(extra)]
     env = {
         "HOME": str(HOME), "USER": os.environ.get("USER", "cristian"),
         "PATH": "/run/current-system/sw/bin", "TERM": "dumb", "LANG": "C.UTF-8",
-        "TMPDIR": "/tmp", "XDG_RUNTIME_DIR": "/tmp" if external else str(socket.parent.parent),
+        "TMPDIR": "/tmp", "XDG_RUNTIME_DIR": str(socket.parent.parent),
         "GIT_CONFIG_NOSYSTEM": "1", "PI_CODING_AGENT_DIR": str(agent),
         "PI_OFFLINE": "1", "PI_TELEMETRY": "0", "PI_SKIP_VERSION_CHECK": "1",
         "DO_NOT_TRACK": "1", "OPENSPEC_TELEMETRY": "0",
     }
-    if not external:
-        env["SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
-        env["NIX_SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
-    if not external:
-        for key in ("TUIOS_ENV", "TUIOS_HOST", "TUIOS_PANE_GRANTS", "TUIOS_PANE_ID",
-                    "TUIOS_PANE_TOKEN", "TUIOS_SESSION", "TUIOS_SOCKET", "TUIOS_WINDOW_ID"):
-            if key in os.environ:
-                env[key] = os.environ[key]
+    env["SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
+    env["NIX_SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
+    for key in ("TUIOS_ENV", "TUIOS_HOST", "TUIOS_PANE_GRANTS", "TUIOS_PANE_ID",
+                "TUIOS_PANE_TOKEN", "TUIOS_SESSION", "TUIOS_SOCKET", "TUIOS_WINDOW_ID"):
+        if key in os.environ:
+            env[key] = os.environ[key]
     for key, value in env.items():
         args += ["--setenv", key, value]
     return args + ["--chdir", str(repo)]
 
 
 def pi_command(spec: dict, model_args: list[str]) -> list[str]:
-    if not spec["external"]:
-        return ["pi", *model_args]
-    relay = (
-        "socat TCP-LISTEN:5098,bind=127.0.0.1,reuseaddr,fork "
-        f"UNIX-CONNECT:{MELIOUS_PROXY_SOCKET} & relay=$!; "
-        "sleep 0.1; pi \"$@\"; rc=$?; kill $relay 2>/dev/null || true; "
-        "wait $relay 2>/dev/null || true; exit $rc"
-    )
-    return ["/run/current-system/sw/bin/bash", "-c", relay, "pi-task-relay", *model_args]
+    return ["pi", *model_args]
 
 
 def final_message(events: Path) -> str:
@@ -583,8 +464,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                         help="stable reviewer-assigned ID (required for melious-dsf)")
     parser.add_argument("--allow", action="append", default=[], metavar="FILE",
                         help="exact project-relative file Pi may change (repeatable)")
-    parser.add_argument("--read", action="append", default=[], metavar="PATH",
-                        help="additional reviewer-approved DSF read path (repeatable)")
     parser.add_argument("--erpnext-bench", choices=sorted(ALLOWED_BENCHES), metavar="BENCH",
                         help="exclusive test bench/database allocated to this worker")
     parser.add_argument("--success", required=True, metavar="COMMAND",
@@ -603,19 +482,17 @@ def main(argv: list[str] | None = None) -> int:
         layout = git_layout(repo)
         allowed = validate_allowed(repo, args.allow)
         spec = MODEL_SPECS[args.model]
-        if spec["external"] and not args.worker_id:
+        if args.model == "melious-dsf" and not args.worker_id:
             raise PolicyError("--worker-id is required for melious-dsf")
-        if not spec["external"] and args.worker_id:
+        if args.model != "melious-dsf" and args.worker_id:
             raise PolicyError("--worker-id is only valid for melious-dsf")
-        if args.read and not spec["external"]:
-            raise PolicyError("--read is only valid for the external melious-dsf privacy boundary")
-        readable = validate_read_scope(repo, args.read, allowed)
         erp_root = HOME / "development/erpnext"
         is_erpnext = repo.is_relative_to(erp_root) or layout.common.is_relative_to(erp_root)
         if is_erpnext and not args.erpnext_bench:
             raise PolicyError("ERPNext work requires an exclusive --erpnext-bench test/test1..test7")
         ensure_scoped(argv)
         runtime = Path(os.environ["XDG_RUNTIME_DIR"])
+        check_web_mcp_health()
         provider_lock = None
         if args.model == "melious-dsf":
             check_melious_health()
@@ -644,31 +521,21 @@ def main(argv: list[str] | None = None) -> int:
         before = snapshot(repo)
         with tempfile.TemporaryDirectory(prefix="pi-task.", dir=runtime) as tmp:
             stage = Path(tmp)
-            inference_mcp, inference_sockets = write_mcp(
-                stage, args.erpnext_bench, spec["external"])
+            inference_mcp, inference_sockets = write_mcp(stage, args.erpnext_bench)
             models = write_run_models(stage, HOME / ".pi/agent/models.json",
                                       args.model, args.worker_id)
-            workspace = None
-            workspace_before = None
-            if spec["external"]:
-                workspace = stage_external_workspace(repo, stage, readable)
-                workspace_before = tree_snapshot(workspace)
             sb = sandbox_args(repo, layout, models, inference_mcp,
-                              inference_sockets, spec["external"], workspace)
+                              inference_sockets)
             allowed_text = "\n".join(f"- {name}" for name in sorted(allowed))
-            read_text = "\n".join(f"- {name}" for name in sorted(readable))
             rules = stage / "rules.md"
             rules.write_text(
                 "You are the bounded implementation worker for exactly one OpenSpec slice.\n"
                 f"Your selected production model is {args.model}; never switch providers or models. "
                 "Never commit, push, change Git refs, invoke OMP, delegate, or use another model. "
                 "Make the smallest implementation needed.\n"
+                "Melious is a trusted provider. You have the same allocated project, read-only "
+                "Git history, shell tools, and MCP capabilities as the local worker.\n"
                 "You may change exactly these project-relative files and no others:\n" + allowed_text +
-                ("\nThis is an external-provider privacy view. Read only these reviewer-approved paths; "
-                 "only public Context7 is available; local sessions, mail, benches, credentials, "
-                 "services, and networks are isolated. Do not seek production data, credentials, "
-                 "secrets, or unrelated repository content:\n" +
-                 read_text if spec["external"] else "") +
                 "\nThe wrapper, not you, runs the success command. End with a concise change summary.\n")
             events = stage / "events.jsonl"
             prompt = f"Implement this single bounded slice:\n\n{args.brief}"
@@ -690,16 +557,7 @@ def main(argv: list[str] | None = None) -> int:
             answer = final_message(events)
             if answer:
                 print(answer)
-            if spec["external"]:
-                problems = tree_violations(workspace_before or {}, tree_snapshot(workspace), allowed)
-                # External Pi never writes the real checkout directly. Any real-tree
-                # movement is concurrent and must be refused before applying outputs.
-                problems += policy_violations(before, snapshot(repo), set())
-                if not problems:
-                    apply_external_changes(workspace, repo, allowed)
-                    problems = policy_violations(before, snapshot(repo), allowed)
-            else:
-                problems = policy_violations(before, snapshot(repo), allowed)
+            problems = policy_violations(before, snapshot(repo), allowed)
             if problems:
                 for problem in problems:
                     print(f"pi-task: REFUSED: {problem}", file=sys.stderr)
@@ -707,16 +565,10 @@ def main(argv: list[str] | None = None) -> int:
                 return EXIT_POLICY
             test_rc: int | None = None
             if pi_rc == 0:
-                # The success command uses the same isolation and 6 GiB outer scope,
-                # but the full local checkout. External model inference has ended, so
-                # unrelated source never crosses the provider privacy boundary.
-                if spec["external"]:
-                    success_mcp, success_sockets = write_mcp(
-                        stage, args.erpnext_bench, False, "success-mcp.json")
-                else:
-                    success_mcp, success_sockets = inference_mcp, inference_sockets
-                success_sb = sandbox_args(repo, layout, models, success_mcp,
-                                          success_sockets, False)
+                # The success command uses the exact same sandbox capabilities and
+                # 6 GiB outer scope as either trusted implementation provider.
+                success_sb = sandbox_args(repo, layout, models, inference_mcp,
+                                          inference_sockets)
                 test_rc = run(success_sb + ["--", "/run/current-system/sw/bin/bash", "-lc",
                                             args.success]).returncode
                 problems = policy_violations(before, snapshot(repo), allowed)
