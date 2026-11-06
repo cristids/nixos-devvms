@@ -57,6 +57,79 @@ class PiTaskPolicyTests(unittest.TestCase):
         (self.repo / "allowed.txt").write_text("new\n")
         self.assertEqual([], pi_task.policy_violations(before, pi_task.snapshot(self.repo), {"allowed.txt"}))
 
+    def prepare_w(self):
+        root = pi_task.HOME / "pi-envs"
+        slot = root / "w1"
+        app = slot / "apps/roster"
+        app.parent.mkdir(parents=True)
+        shutil.copytree(self.repo, app)
+        (slot / "toolchain.sh").write_text("export PATH=/w-toolchain:$PATH\n")
+        self.addCleanup(mock.patch.stopall)
+        mock.patch.object(pi_task, "W_ROOT", root).start()
+        return slot, app
+
+    def test_w_checkout_requires_exact_matching_slot_and_local_git(self):
+        slot, app = self.prepare_w()
+        self.assertEqual(app, pi_task.validate_repo(str(app)))
+        layout = pi_task.git_layout(app)
+        self.assertEqual(slot, pi_task.validate_w_assignment(app, layout, "w1"))
+        for bench in (None, "w2", "test1"):
+            with self.assertRaises(pi_task.PolicyError):
+                pi_task.validate_w_assignment(app, layout, bench)
+        for name in ("w0", "w7", ".control", "w1-other"):
+            self.assertIsNone(pi_task.w_slot(slot.parent / name))
+        escaped = pi_task.GitLayout(layout.dotgit, self.repo / ".git", self.repo / ".git")
+        with self.assertRaises(pi_task.PolicyError):
+            pi_task.validate_w_assignment(app, escaped, "w1")
+
+    def test_w_lease_conflicts_with_lifecycle_and_other_worker(self):
+        slot, app = self.prepare_w()
+        with pi_task.acquire_w_lease(slot):
+            with self.assertRaises(pi_task.PolicyError):
+                pi_task.acquire_w_lease(slot)
+            with pi_task.acquire_w_lease(slot.parent / "w2"):
+                pass
+        with pi_task.acquire_w_lease(slot):
+            pass
+
+    def test_other_app_source_changes_are_guarded_but_runtime_state_is_free(self):
+        slot, app = self.prepare_w()
+        other = slot / "apps/core"
+        shutil.copytree(self.repo, other)
+        before = pi_task.w_app_snapshots(slot, app)
+        (slot / "logs").mkdir()
+        (slot / "logs/test.log").write_text("runtime log")
+        (app / "new-test.py").write_text("pass")
+        self.assertEqual([], pi_task.w_scope_violations(before))
+        (other / "other.txt").write_text("unauthorized")
+        self.assertTrue(pi_task.w_scope_violations(before))
+
+    def test_w_mcp_only_exposes_own_site_without_shared_credentials(self):
+        slot, app = self.prepare_w()
+        (slot / "config").mkdir()
+        (slot / "config/mcp.json").write_text(json.dumps({
+            "site": "w1.localhost", "url": "http://127.0.0.1:8110",
+            "api_key": "own-key", "api_secret": "own-secret"}))
+        stage = pi_task.HOME / "stage"
+        stage.mkdir()
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(stage)}):
+            config, mounts = pi_task.write_mcp(stage, "w1")
+        erp = json.loads(config.read_text())["mcpServers"]["erpnext"]
+        self.assertEqual("/run/current-system/sw/bin/erpnext-mcp", erp["command"])
+        mapping = json.loads(Path(erp["env"]["ERPNEXT_MCP_ENV_MAP"]).read_text())
+        self.assertEqual({"w1"}, set(mapping["benches"]))
+        creds = json.loads(Path(erp["env"]["ERPNEXT_MCP_CREDENTIALS"]).read_text())
+        self.assertEqual({"w1.localhost"}, set(creds))
+        self.assertEqual(2, len(mounts))
+
+    def test_worker_and_success_commands_source_same_w_toolchain(self):
+        slot, app = self.prepare_w()
+        for command in (["pi", "--model", "local-qwen"], ["bash", "-c", "native-tests"]):
+            wrapped = pi_task.worker_command(app, command)
+            self.assertIn(str(slot), wrapped)
+            self.assertEqual(command, wrapped[-len(command):])
+            self.assertIn('source "$1/toolchain.sh"', wrapped[2])
+
     def test_out_of_scope_tracked_change_fails(self):
         before = pi_task.snapshot(self.repo)
         (self.repo / "other.txt").write_text("changed\n")

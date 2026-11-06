@@ -1,6 +1,6 @@
 # Production Pi worker pool on devpro
 
-`pi-task` runs one bounded OpenSpec implementation slice. A reviewer owns the
+`pi-task` runs one substantial OpenSpec implementation packet. A reviewer owns the
 brief, file scope, worktree, test command, provider choice, bench allocation,
 diff review, and final commit. Workers never commit.
 
@@ -113,11 +113,59 @@ each result with `tuios worktree diff SESSION`, rerun its success command, and
 combine changes manually. Remove a reviewed worktree with
 `pi-task-worktree rm SESSION`.
 
-ERPNext integration lanes must each receive a different running test bench via
-`--erpnext-bench test`, `test1`, …, `test7`. The wrapper holds an exclusive
-bench lock. Both providers and the success check expose only that bench's
-filtered MCP socket; raw ERPNext credentials remain behind the broker. UAT and
-production sites are never allocatable.
+### ERPNext: complete W1–W6 development environments
+
+Each ERPNext worker gets one complete disposable bench `/srv/pi-envs/w1` through
+`w6`, its own database/user, app clones, Python environments, Node/yarn/build
+toolchain, Redis sockets and HTTP server. Shared `test`, `test1`…`test7`, UAT and
+production benches cannot be allocated to a new Pi packet. Existing sessions
+are unaffected. `/home`, other W slots and `/srv/pi-envs/.control` stay hidden.
+
+The reviewer prepares one slot before launching the packet. Inspect status and
+collect existing evidence before any intentional reset; the runner never resets
+a slot automatically. `benches/pi-envs.md` in the ERPNext repo is the authoritative
+provision/reset/link procedure. A prepared app may be used directly, or linked
+to a standalone packet clone **inside the same W slot**. Never link its Git
+metadata or installed Python imports back into hidden `/home`.
+
+```sh
+manager=/home/cristian/development/erpnext/benches/pienv.sh
+$manager status 1
+# If necessary, prepare/link the reviewed app baseline using pi-envs.md first.
+$manager start 1
+$manager web 1
+# Launch inside the assigned TUIOS pane:
+pi-task --cwd /srv/pi-envs/w1/apps/dominobyte_roster \
+  --erpnext-bench w1 --allow-app \
+  --success 'cd "$E2E_BENCH" && env/bin/python config/pienv_run_tests.py test_annual_summary_native' \
+  'Complete the reviewed OpenSpec plan; run native tests and repair findings.'
+```
+
+Use the same command with `--model melious-dsf --worker-id BATCH-dsf1` and a
+different slot for DSF. `--allow-app` permits existing and new source files in
+the selected disposable app, with final diff review. For a narrowly scoped fix,
+repeat exact `--allow FILE` instead. Other apps' source and every app's Git
+metadata remain guarded; runtime DB/log/cache/build/environment effects are
+allowed. Workers never commit, so untracked files must also be reviewed and
+exported by the reviewer before reset.
+
+The runner holds the same per-slot lease used by the lifecycle manager from
+readiness checks through all implementation and acceptance testing. Stop/reset/
+link cannot invalidate a running mount. Toolchain variables are inherited by
+Pi, child tools and the independent success command: `E2E_BENCH`, `E2E_SITE`,
+`PI_BASE_SHA`, Python/dev PATH and library paths. Workers can run `bench --site
+"$E2E_SITE" migrate`, `bench build`, native test adapters, `pi-env-runtime reload`
+and foreground `pi-env-runtime worker` when a task needs queue processing.
+
+ERPNext MCP runs **inside the worker sandbox**, with a read-only generated map
+containing only the assigned `wN`/`wN.localhost` and that slot's own API identity.
+It reads the current credentials after web startup; reset rotates them. No shared
+ERPNext credentials or old bench aliases are mounted. Web reload picks up changed
+packet code; check the imported app path and test the actual behavior.
+
+Only start the services a packet needs. The VM has 32 GiB until its next full
+shutdown/start (64 GiB configured); six simultaneous heavy suites are not a
+capacity guarantee. Model cap/limit, 6 GiB worker scope and live monitoring remain.
 
 SearXNG is optional. An outage is reported as degraded and does not block
 unrelated coding. Add `--require-web` only when web access is an acceptance
@@ -156,17 +204,19 @@ not claims of full packet capture.
 
 ## Guardrails and failures
 
-Every run retains the 6 GiB scope, mandatory success command, exact write
-allowlist, HEAD/index and concurrent-tree guards, minimal HOME, empty `/var`, and
+Every run retains the 6 GiB scope, mandatory success command, reviewed source
+scope (exact files or one disposable W app), HEAD/index and concurrent-tree guards,
+minimal HOME, empty `/var`, and
 read-only Git metadata. Melious is a trusted provider: DSF and local Qwen receive
 the same full allocated normal or linked worktree, Git objects/history, shell/dev
 tooling, Nix daemon, and MCP surface. That surface is Context7, session-scoped
 no-pane-typing TUIOS coordination, local SearXNG web search, and the optional
 allocated bench-filtered ERPNext MCP. SearXNG results remain untrusted input.
 
-Raw credentials are not placed in model config, prompts, logs, or worker mounts.
-Melious requests remain worker-scoped through `pi-task-control`; ERPNext uses its
-bench socket broker; SearXNG uses the same local MCP server and credential-free
+Provider/shared credentials are not placed in model config, prompts, logs, or
+worker mounts. A W worker has only its own disposable database/API credentials.
+Melious requests remain worker-scoped through `pi-task-control`; W ERPNext MCP
+runs in the allocated sandbox; SearXNG uses the same local MCP server and credential-free
 homelab search endpoint used behind the bake-off gateway. Provider, credential, model, control,
 worktree, bench, scope, and test failures name their cause and never fall back.
 

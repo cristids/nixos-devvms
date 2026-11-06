@@ -20,7 +20,7 @@ import sys
 import tempfile
 import time
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 
 EXIT_POLICY = 6
@@ -36,6 +36,9 @@ MODEL_SPECS = {
     },
 }
 ALLOWED_BENCHES = {"test", *{f"test{i}" for i in range(1, 8)}}
+W_ROOT = Path("/srv/pi-envs")
+W_SLOTS = {f"w{i}" for i in range(1, 7)}
+ALLOWED_BENCHES |= W_SLOTS
 SEARXNG_HEALTH = "http://192.168.40.28:8080/healthz"
 PI_TASK_CONTROL = "/run/current-system/sw/bin/pi-task-control"
 WORKER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -100,7 +103,70 @@ def git(repo: Path, *args: str, check: bool = True, text: bool = False):
 
 def within_project_roots(path: Path) -> bool:
     roots = (HOME / "development", HOME / "scratch")
-    return any(path.is_relative_to(root) for root in roots)
+    return any(path.is_relative_to(root) for root in roots) or w_slot(path) is not None
+
+
+def w_slot(path: Path) -> Path | None:
+    """Recognize only exact canonical W1-W6 descendants, never .control/aliases."""
+    if not path.is_relative_to(W_ROOT):
+        return None
+    relative = path.relative_to(W_ROOT)
+    if not relative.parts or relative.parts[0] not in W_SLOTS:
+        return None
+    root = W_ROOT / relative.parts[0]
+    if root.resolve() != root or path.resolve() != path:
+        raise PolicyError("W paths must be canonical and cannot escape through symlinks")
+    return root
+
+
+def validate_w_assignment(repo: Path, layout: GitLayout, bench: str | None) -> Path | None:
+    root = w_slot(repo)
+    if root is None:
+        if bench in W_SLOTS:
+            raise PolicyError("W work must use its own checkout below /srv/pi-envs/wN")
+        return None
+    if bench != root.name:
+        raise PolicyError("--erpnext-bench must match the checkout's W slot")
+    if repo == root or not layout.common.is_relative_to(root) or not layout.gitdir.is_relative_to(root):
+        raise PolicyError("W checkout and all Git metadata must belong to the assigned slot")
+    if not (root / "toolchain.sh").is_file():
+        raise PolicyError("W environment is not provisioned: missing toolchain.sh")
+    linked = [p.resolve() for p in (root / "apps").iterdir() if p.is_dir()]
+    if repo not in linked:
+        raise PolicyError("W checkout must be linked as an installed app before running")
+    return root
+
+
+def acquire_w_lease(root: Path):
+    path = W_ROOT / ".control/leases" / f"{root.name}.lock"
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    handle = path.open("a+")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as exc:
+        handle.close()
+        raise PolicyError(f"W environment is already allocated: {root.name}") from exc
+    return handle
+
+
+def w_app_snapshots(root: Path, selected: Path) -> dict[Path, dict]:
+    result = {}
+    for app in (root / "apps").iterdir():
+        target = app.resolve()
+        if not target.is_relative_to(root):
+            raise PolicyError(f"W app escapes its assigned environment: {app.name}")
+        if target != selected and (target / ".git").exists():
+            result[target] = snapshot(target)
+    return result
+
+
+def w_app_links(root: Path) -> dict[str, str]:
+    return {app.name: str(app.resolve()) for app in (root / "apps").iterdir()}
+
+
+def w_scope_violations(before: dict[Path, dict]) -> list[str]:
+    return [f"{app.name}: {problem}" for app, state in before.items()
+            for problem in policy_violations(state, snapshot(app), set())]
 
 
 def git_layout(repo: Path) -> GitLayout:
@@ -140,7 +206,7 @@ def validate_repo(value: str) -> Path:
     if not repo.is_dir():
         raise PolicyError(f"{repo} is not a directory")
     roots = (HOME / "development", HOME / "scratch")
-    if not any(repo.is_relative_to(root) and repo != root for root in roots):
+    if not any(repo.is_relative_to(root) and repo != root for root in roots) and w_slot(repo) is None:
         raise PolicyError(f"{repo} must be below ~/development or ~/scratch")
     top = Path(git(repo, "rev-parse", "--show-toplevel", text=True).strip()).resolve()
     if top != repo:
@@ -493,8 +559,12 @@ def monitored_run(command: list[str], events: Path, audit: AuditLogger) -> int:
     return process.wait()
 
 
-def worker_rules(model: str, allowed: set[str], success: str) -> str:
+def worker_rules(model: str, allowed: set[str], success: str, broad_scope: bool = False) -> str:
     allowed_text = "\n".join(f"- {name}" for name in sorted(allowed))
+    scope = ("You may modify and create source files within this selected disposable app "
+             "to complete the reviewed OpenSpec plan. All changes receive final diff review.\n"
+             if broad_scope else
+             "You may change exactly these project-relative files and no others:\n" + allowed_text)
     return (
         "You are the autonomous bounded implementation worker for exactly one "
         "self-contained OpenSpec work packet. Inspect the relevant project and Git "
@@ -505,8 +575,8 @@ def worker_rules(model: str, allowed: set[str], success: str) -> str:
         "Never commit, push, change Git refs, invoke OMP, delegate, or use another model. "
         "Make the smallest implementation needed.\n"
         "Melious is a trusted provider. You have the same allocated project, read-only "
-        "Git history, shell tools, and MCP capabilities as the local worker.\n"
-        "You may change exactly these project-relative files and no others:\n" + allowed_text +
+        "Git history, shell tools, and MCP capabilities as the local worker.\n" +
+        scope +
         "\nYour required acceptance command is:\n" + success +
         "\nRun that command yourself during implementation and repair failures within scope. "
         "The wrapper will independently run it again after you exit. End with a concise "
@@ -551,7 +621,31 @@ def write_mcp(stage: Path, bench: str | None,
         },
     }
     sockets = []
-    if bench:
+    if bench in W_SLOTS:
+        root = W_ROOT / bench
+        site = f"{bench}.localhost"
+        try:
+            own = json.loads((root / "config/mcp.json").read_text())
+            if (own.get("site") != site or own.get("url") != f"http://127.0.0.1:81{bench[1:]}0"
+                    or not all(isinstance(own.get(key), str) and own[key]
+                               for key in ("api_key", "api_secret"))):
+                raise ValueError("missing or mismatched W credentials")
+        except (OSError, ValueError, AttributeError) as exc:
+            raise PolicyError(f"W MCP is not ready for {bench}; prepare web credentials") from exc
+        env_path, cred_path = stage / "w-env.json", stage / "w-credentials.json"
+        env_path.write_text(json.dumps({"root": str(W_ROOT), "benches": {bench: {
+            "port": int(f"81{bench[1:]}0"), "default_site": site,
+            "sites": [site], "served": [site]}}}))
+        cred_path.write_text(json.dumps({site: {"key": own["api_key"], "secret": own["api_secret"]}}))
+        for path in (env_path, cred_path):
+            path.chmod(0o600)
+        sockets.extend((env_path, cred_path))
+        servers["erpnext"] = {
+            "command": "/run/current-system/sw/bin/erpnext-mcp", "args": [],
+            "env": {"ERPNEXT_MCP_ENV_MAP": str(env_path), "ERPNEXT_MCP_CREDENTIALS": str(cred_path)},
+            "exposure": "direct",
+        }
+    elif bench:
         socket = runtime / f"pi-task-erpnext-{bench}.sock"
         if not socket.is_socket():
             raise PolicyError(f"ERPNext MCP broker unavailable for bench {bench}")
@@ -593,7 +687,20 @@ def sandbox_args(repo: Path, layout: GitLayout, models: Path, mcp: Path,
     ]
     args += ["--ro-bind", "/etc", "/etc", "--ro-bind", "/bin", "/bin",
              "--ro-bind", "/usr", "/usr"]
-    args += project_mount_args(repo, layout)
+    slot = w_slot(repo)
+    if slot:
+        args += ["--bind", str(slot), str(slot)]
+        # Runtime state (DB sockets, logs, assets, virtualenvs) is writable. Git
+        # metadata stays read-only for every installed app, not just this packet.
+        for app in (slot / "apps").iterdir():
+            target = app.resolve()
+            if not target.is_relative_to(slot):
+                raise PolicyError(f"W app escapes its environment: {app.name}")
+            if (target / ".git").exists():
+                args += git_mount_args(git_layout(target))
+        args += git_mount_args(layout)
+    else:
+        args += project_mount_args(repo, layout)
     extension = source_agent / "extensions/tuios-agent-state.ts"
     if extension.is_file():
         args += ["--dir", str(agent / "extensions"), "--ro-bind", str(extension),
@@ -615,6 +722,9 @@ def sandbox_args(repo: Path, layout: GitLayout, models: Path, mcp: Path,
     }
     env["SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
     env["NIX_SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
+    if slot:
+        env.update(E2E_BENCH=str(slot), E2E_SITE=f"{slot.name}.localhost",
+                   PI_BASE_SHA=git(repo, "rev-parse", "HEAD", text=True).strip())
     for key in ("TUIOS_ENV", "TUIOS_HOST", "TUIOS_PANE_GRANTS", "TUIOS_PANE_ID",
                 "TUIOS_PANE_TOKEN", "TUIOS_SESSION", "TUIOS_SOCKET", "TUIOS_WINDOW_ID"):
         if key in os.environ:
@@ -622,6 +732,15 @@ def sandbox_args(repo: Path, layout: GitLayout, models: Path, mcp: Path,
     for key, value in env.items():
         args += ["--setenv", key, value]
     return args + ["--chdir", str(repo)]
+
+
+def worker_command(repo: Path, command: list[str]) -> list[str]:
+    """Source the slot's development environment for Pi and every child tool."""
+    slot = w_slot(repo)
+    if not slot:
+        return command
+    return ["/run/current-system/sw/bin/bash", "-c",
+            'source "$1/toolchain.sh"; shift; exec "$@"', "pi-w-env", str(slot), *command]
 
 
 def final_message(events: Path) -> str:
@@ -671,6 +790,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                         help="stable reviewer-assigned ID (required for melious-dsf)")
     parser.add_argument("--allow", action="append", default=[], metavar="FILE",
                         help="exact project-relative file Pi may change (repeatable)")
+    parser.add_argument("--allow-app", action="store_true",
+                        help="review all source changes in the selected disposable W app; permits new files")
     parser.add_argument("--erpnext-bench", choices=sorted(ALLOWED_BENCHES), metavar="BENCH",
                         help="exclusive test bench/database allocated to this worker")
     parser.add_argument("--attempt", type=int, choices=(1, 2, 3), default=1,
@@ -694,7 +815,10 @@ def main(argv: list[str] | None = None) -> int:
         attempt = args.attempt
         repo = validate_repo(args.cwd)
         layout = git_layout(repo)
-        allowed = validate_allowed(repo, args.allow)
+        slot = validate_w_assignment(repo, layout, args.erpnext_bench)
+        if args.allow_app and slot is None:
+            raise PolicyError("--allow-app is only valid in a disposable W app checkout")
+        allowed = validate_allowed(repo, args.allow) if not args.allow_app else set()
         spec = MODEL_SPECS[args.model]
         if args.model == "melious-dsf" and not args.worker_id:
             raise PolicyError("--worker-id is required for melious-dsf")
@@ -704,8 +828,10 @@ def main(argv: list[str] | None = None) -> int:
             raise PolicyError("--worker-id must contain only letters, digits, dot, underscore or dash")
         erp_root = HOME / "development/erpnext"
         is_erpnext = repo.is_relative_to(erp_root) or layout.common.is_relative_to(erp_root)
-        if is_erpnext and not args.erpnext_bench:
-            raise PolicyError("ERPNext work requires an exclusive --erpnext-bench test/test1..test7")
+        if is_erpnext and slot is None:
+            raise PolicyError("ERPNext workers require their own W1-W6 checkout and --erpnext-bench wN")
+        if args.erpnext_bench and args.erpnext_bench not in W_SLOTS:
+            raise PolicyError("ERPNext worker writes must use W1-W6, not shared test/UAT benches")
         ensure_scoped(argv)
         runtime = Path(os.environ["XDG_RUNTIME_DIR"])
         worker_identity = args.worker_id or "local-qwen"
@@ -743,9 +869,29 @@ def main(argv: list[str] | None = None) -> int:
             raise PolicyError("another pi-task is already running for this project") from exc
         bench_lock = None
         if args.erpnext_bench:
-            bench_lock = acquire_exclusive_lock(runtime, f"erpnext-{args.erpnext_bench}")
+            bench_lock = acquire_w_lease(slot)
+            # Preparation may have completed between argument validation and the
+            # lease. Re-resolve app linkage and Git metadata under the lease.
+            repo = validate_repo(args.cwd)
+            layout = git_layout(repo)
+            slot = validate_w_assignment(repo, layout, args.erpnext_bench)
+            for name in ("redis-cache.sock", "redis-queue.sock", "mariadb.sock"):
+                if not (slot / "run" / name).is_socket():
+                    raise PolicyError(f"prepare/start {slot.name} before launching: missing {name}")
+            # Readiness is checked while holding the lifecycle lease; reset/stop
+            # cannot race a running packet. Preparation never silently resets data.
+            try:
+                request = Request(f"http://127.0.0.1:81{slot.name[1:]}0/api/method/ping",
+                                  headers={"Host": f"{slot.name}.localhost"})
+                with urlopen(request, timeout=10) as response:
+                    if response.status != 200:
+                        raise ValueError("web service not ready")
+            except (OSError, ValueError) as exc:
+                raise PolicyError(f"prepare/start/web {slot.name} before launching: {exc}") from exc
 
         before = snapshot(repo)
+        other_apps = w_app_snapshots(slot, repo) if slot else {}
+        app_links = w_app_links(slot) if slot else {}
         with tempfile.TemporaryDirectory(prefix="pi-task.", dir=runtime) as tmp:
             stage = Path(tmp)
             inference_mcp, inference_sockets = write_mcp(stage, args.erpnext_bench)
@@ -754,14 +900,26 @@ def main(argv: list[str] | None = None) -> int:
             sb = sandbox_args(repo, layout, models, inference_mcp,
                               inference_sockets)
             rules = stage / "rules.md"
-            rules.write_text(worker_rules(args.model, allowed, args.success))
+            task_rules = worker_rules(args.model, allowed, args.success, args.allow_app)
+            rules.write_text(task_rules + (
+                f"\nYour complete private development bench is {slot}; site {slot.name}.localhost. "
+                "Its Python, Node, bench toolchain and linked app code are active in every tool. "
+                "Run native tests, migrations, installs and asset builds here as needed; DB, logs, "
+                "cache and runtime artifacts inside your W environment are writable. Source-file "
+                "scope still applies to every app. Native suite example: cd \"$E2E_BENCH\" && "
+                "env/bin/python config/pienv_run_tests.py test_annual_summary_native. "
+                "Use bench --site \"$E2E_SITE\" migrate for schema changes, bench build for assets, "
+                "pi-env-runtime reload after code/schema changes and pi-env-runtime worker for "
+                "foreground background-job processing when needed. ERPNext MCP exposes only your "
+                "own W site. Your app import must point to this packet checkout. "
+                "Never target another environment or reset your slot.\n" if slot else ""))
             events = stage / "events.jsonl"
-            prompt = f"Implement this single bounded slice:\n\n{args.brief}"
+            prompt = f"Complete this OpenSpec work packet autonomously:\n\n{args.brief}"
             started = time.monotonic()
             model_args = ["-p", "--mode", "json", "--approve", "--no-session",
                           "--model", spec["pi_model"], "--append-system-prompt",
                           rules.read_text(), "--", prompt]
-            pi_rc = monitored_run(sb + ["--", "pi", *model_args], events, audit)
+            pi_rc = monitored_run(sb + ["--", *worker_command(repo, ["pi", *model_args])], events, audit)
             elapsed = time.monotonic() - started
             try:
                 accounting(events, args.model, elapsed, pi_rc)
@@ -773,7 +931,11 @@ def main(argv: list[str] | None = None) -> int:
             answer = final_message(events)
             if answer:
                 print(answer)
-            problems = policy_violations(before, snapshot(repo), allowed)
+            after = snapshot(repo)
+            effective_allowed = set(before["files"]) | set(after["files"]) if args.allow_app else allowed
+            problems = policy_violations(before, after, effective_allowed) + w_scope_violations(other_apps)
+            if slot and w_app_links(slot) != app_links:
+                problems.append("installed W app links changed")
             if problems:
                 for problem in problems:
                     print(f"pi-task: REFUSED: {problem}", file=sys.stderr)
@@ -786,9 +948,13 @@ def main(argv: list[str] | None = None) -> int:
                 # 6 GiB outer scope as either trusted implementation provider.
                 success_sb = sandbox_args(repo, layout, models, inference_mcp,
                                           inference_sockets)
-                test_rc = run(success_sb + ["--", "/run/current-system/sw/bin/bash", "-lc",
-                                            args.success]).returncode
-                problems = policy_violations(before, snapshot(repo), allowed)
+                test_rc = run(success_sb + ["--", *worker_command(repo, [
+                    "/run/current-system/sw/bin/bash", "-c", args.success])]).returncode
+                after = snapshot(repo)
+                effective_allowed = set(before["files"]) | set(after["files"]) if args.allow_app else allowed
+                problems = policy_violations(before, after, effective_allowed) + w_scope_violations(other_apps)
+                if slot and w_app_links(slot) != app_links:
+                    problems.append("installed W app links changed")
                 if problems:
                     for problem in problems:
                         print(f"pi-task: REFUSED after success command: {problem}", file=sys.stderr)
