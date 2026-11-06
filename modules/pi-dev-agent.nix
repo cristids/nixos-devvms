@@ -17,6 +17,11 @@ let
     meta.description = "SearXNG MCP server for trusted pi-task workers";
   };
   productionBenches = [ "test" "test1" "test2" "test3" "test4" "test5" "test6" "test7" ];
+  browserPython = pkgs.python3.withPackages (p: [ p.playwright p.requests ]);
+  piBrowserPython = pkgs.writeShellScriptBin "pi-browser-python" ''
+    export PYTHONNOUSERSITE=1
+    exec ${browserPython}/bin/python3 "$@"
+  '';
 
   piTask = pkgs.runCommand "pi-task" {
     nativeBuildInputs = [ pkgs.makeWrapper pkgs.python3 pkgs.git pkgs.strace config.ompDevAgent.bubblewrap ];
@@ -155,7 +160,15 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = [ piPkg piTask piTaskControl webMcpPkg ];
+    environment.systemPackages = [ piPkg piTask piTaskControl webMcpPkg ]
+      ++ lib.optionals cfg.erpnext.enable [ pkgs.chromium pkgs.playwright-test piBrowserPython ];
+    environment.etc."pi-task-browser-env" = lib.mkIf cfg.erpnext.enable {
+      text = ''
+        export E2E_CHROMIUM=${pkgs.chromium}/bin/chromium
+        export NODE_PATH=${pkgs.playwright-test}/lib/node_modules
+        export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+      '';
+    };
 
     # Root owns the only Melious credential. Pi sees a dummy API key and talks
     # only to this persistent worker-aware control proxy. It injects the

@@ -157,6 +157,16 @@ Pi, child tools and the independent success command: `E2E_BENCH`, `E2E_SITE`,
 "$E2E_SITE" migrate`, `bench build`, native test adapters, `pi-env-runtime reload`
 and foreground `pi-env-runtime worker` when a task needs queue processing.
 
+Browser tests use Nix-managed Chromium and Playwright. `E2E_BASE_URL` is always
+set to the assigned W URL (preventing legacy tests' shared-bench defaults), and
+`E2E_CHROMIUM` selects the system browser. Node can resolve `@playwright/test`
+through `NODE_PATH`; run `playwright test` for the existing `qa/e2e` stack.
+Run Python browser scripts with `pi-browser-python`, a dedicated Nix interpreter
+with Playwright and requests, without altering the Frappe virtualenv. Browser
+profiles/cache are disposable inside the sandbox; save evidence to the W `logs`
+directory. The private `/login` page was loaded headlessly, DOM checked and
+screenshotted with `/home` hidden. This verifies tooling, not every application UI.
+
 ERPNext MCP runs **inside the worker sandbox**, with a read-only generated map
 containing only the assigned `wN`/`wN.localhost` and that slot's own API identity.
 It reads the current credentials after web startup; reset rotates them. No shared

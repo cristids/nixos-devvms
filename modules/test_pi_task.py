@@ -130,6 +130,30 @@ class PiTaskPolicyTests(unittest.TestCase):
             self.assertEqual(command, wrapped[-len(command):])
             self.assertIn('source "$1/toolchain.sh"', wrapped[2])
 
+    def test_w_mcp_invalid_credentials_are_classified_not_tracebacks(self):
+        slot, app = self.prepare_w()
+        (slot / "config").mkdir()
+        stage = pi_task.HOME / "stage"
+        stage.mkdir()
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(stage)}):
+            for content in (None, "{", "[]", "{}", '{"site":"w2.localhost"}'):
+                if content is not None:
+                    (slot / "config/mcp.json").write_text(content)
+                with self.assertRaises(pi_task.PolicyError):
+                    pi_task.write_mcp(stage, "w1")
+
+    def test_w_app_relink_is_detected_and_broad_scope_is_explicit(self):
+        slot, app = self.prepare_w()
+        before = pi_task.w_app_links(slot)
+        target = slot / "worktrees/replacement"
+        target.parent.mkdir()
+        shutil.move(str(app), str(target))
+        app.symlink_to(target)
+        self.assertNotEqual(before, pi_task.w_app_links(slot))
+        rules = pi_task.worker_rules("local-qwen", set(), "tests", broad_scope=True)
+        self.assertIn("modify and create source files", rules)
+        self.assertNotIn("exactly these project-relative files", rules)
+
     def test_out_of_scope_tracked_change_fails(self):
         before = pi_task.snapshot(self.repo)
         (self.repo / "other.txt").write_text("changed\n")

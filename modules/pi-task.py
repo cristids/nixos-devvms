@@ -724,6 +724,7 @@ def sandbox_args(repo: Path, layout: GitLayout, models: Path, mcp: Path,
     env["NIX_SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
     if slot:
         env.update(E2E_BENCH=str(slot), E2E_SITE=f"{slot.name}.localhost",
+                   E2E_BASE_URL=f"http://{slot.name}.localhost:81{slot.name[1:]}0",
                    PI_BASE_SHA=git(repo, "rev-parse", "HEAD", text=True).strip())
     for key in ("TUIOS_ENV", "TUIOS_HOST", "TUIOS_PANE_GRANTS", "TUIOS_PANE_ID",
                 "TUIOS_PANE_TOKEN", "TUIOS_SESSION", "TUIOS_SOCKET", "TUIOS_WINDOW_ID"):
@@ -740,7 +741,9 @@ def worker_command(repo: Path, command: list[str]) -> list[str]:
     if not slot:
         return command
     return ["/run/current-system/sw/bin/bash", "-c",
-            'source "$1/toolchain.sh"; shift; exec "$@"', "pi-w-env", str(slot), *command]
+            'source "$1/toolchain.sh"; '
+            'if test -f /etc/pi-task-browser-env; then source /etc/pi-task-browser-env; fi; '
+            'shift; exec "$@"', "pi-w-env", str(slot), *command]
 
 
 def final_message(events: Path) -> str:
