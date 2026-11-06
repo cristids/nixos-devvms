@@ -57,6 +57,135 @@ class PiTaskPolicyTests(unittest.TestCase):
         (self.repo / "allowed.txt").write_text("new\n")
         self.assertEqual([], pi_task.policy_violations(before, pi_task.snapshot(self.repo), {"allowed.txt"}))
 
+    def test_worker_scope_disables_swap(self):
+        runtime = pi_task.HOME / "runtime"
+        self.bind_socket(runtime / "bus")
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(runtime), "PI_TASK_SCOPED": "0"}), \
+                mock.patch.object(pi_task.os, "execvpe") as execute:
+            pi_task.ensure_scoped(["--success", "true", "brief"])
+            argv = execute.call_args.args[1]
+            self.assertIn("MemoryMax=6G", argv)
+            self.assertIn("MemorySwapMax=0", argv)
+
+    def test_acceptance_defaults_and_explicit_dependencies_leave_candidate_tests_editable(self):
+        slot, app = self.prepare_w()
+        (slot / "config").mkdir()
+        gate = slot / "config/native-acceptance-gate.py"
+        manifest = slot / "config/acceptance-manifest.json"
+        gate.write_text("raise SystemExit(17)\n")
+        manifest.write_text("{}")
+        packet = app / "openspec/changes/check"
+        packet.mkdir(parents=True)
+        success = packet / "success.sh"
+        success.write_text("exit 17\n")
+        candidate = app / "test_candidate.py"
+        candidate.write_text("# worker-owned test\n")
+        dependency = app / "checker.json"
+        dependency.write_text("{}")
+        paths = pi_task.acceptance_files(app, slot, ["checker.json"], {"test_candidate.py"})
+        self.assertEqual({gate, manifest, success, dependency, slot / "toolchain.sh"}, set(paths))
+        self.assertNotIn(candidate, paths)
+        with self.assertRaises(pi_task.PolicyError):
+            pi_task.acceptance_files(app, slot, ["checker.json"], {"checker.json"})
+        with self.assertRaises(pi_task.PolicyError):
+            pi_task.acceptance_files(app, slot, [str(self.repo / "allowed.txt")], set())
+        with self.assertRaises(pi_task.PolicyError):
+            pi_task.acceptance_files(app, slot, ["missing.py"], set())
+        alias = app / "alias.json"
+        alias.symlink_to(dependency)
+        with self.assertRaises(pi_task.PolicyError):
+            pi_task.acceptance_files(app, slot, ["alias.json"], set())
+
+    def test_acceptance_snapshot_survives_alias_writes_and_detects_replacement(self):
+        target = self.repo / "allowed.txt"
+        alias = self.repo / "hardlink.txt"
+        os.link(target, alias)
+        stage = pi_task.HOME / "stage"
+        stage.mkdir()
+        frozen = pi_task.freeze_acceptance(stage, [target])
+        self.assertEqual([], pi_task.acceptance_violations(frozen))
+        alias.write_text("tampered\n")
+        self.assertEqual("old\n", frozen[0][0].read_text())
+        self.assertTrue(pi_task.acceptance_violations(frozen))
+        target.unlink()
+        target.symlink_to(alias)
+        self.assertTrue(pi_task.acceptance_violations(frozen))
+
+    def test_readonly_acceptance_blocks_write_unlink_replace_but_not_candidate_work(self):
+        stage = pi_task.HOME / "stage"
+        stage.mkdir()
+        target = self.repo / "other.txt"
+        frozen = pi_task.freeze_acceptance(stage, [target])
+        script = '''
+import errno, os
+from pathlib import Path
+target = Path("other.txt")
+for action in (lambda: target.write_text("cheat"), lambda: target.unlink(),
+               lambda: os.replace("allowed.txt", target)):
+    try:
+        action()
+    except OSError as exc:
+        assert exc.errno in (errno.EROFS, errno.EBUSY, errno.EACCES), exc
+    else:
+        raise AssertionError("acceptance was writable")
+assert target.read_text() == "stable\\n"
+Path("allowed.txt").write_text("worker change\\n")
+Path("new_test.py").write_text("# candidate test\\n")
+'''
+        command = [shutil.which("bwrap"), "--die-with-parent", "--unshare-pid",
+                   "--ro-bind", "/nix/store", "/nix/store", "--proc", "/proc",
+                   "--dev", "/dev", "--tmpfs", "/tmp",
+                   "--bind", str(self.repo), str(self.repo),
+                   "--ro-bind", str(frozen[0][0]), str(target),
+                   "--chdir", str(self.repo), "--", str(Path(sys.executable).resolve()), "-c", script]
+        for phase in ("worker", "success"):
+            with self.subTest(phase=phase):
+                result = subprocess.run(command, capture_output=True, text=True)
+                self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual([], pi_task.acceptance_violations(frozen))
+        self.assertEqual("worker change\n", (self.repo / "allowed.txt").read_text())
+
+    def test_live_host_attestation_readonly_and_runtime_paths_writable(self):
+        slot, app = self.prepare_w()
+        config = slot / "config"
+        (config / "pids").mkdir(parents=True)
+        (config / "web-reload").touch()
+        (config / "bench_build.lock").touch()
+        script = '''
+import errno,sys
+from pathlib import Path
+print("ready", flush=True)
+sys.stdin.readline()
+p = Path("config/root-runtime-attestation.json")
+assert p.read_text() == "trusted update"
+for action in (lambda: p.write_text("forged"), lambda: p.unlink(),
+               lambda: Path("config/new-approval.json").write_text("forged")):
+    try:
+        action()
+    except OSError as exc:
+        assert exc.errno in (errno.EROFS, errno.EBUSY, errno.EACCES), exc
+    else:
+        raise AssertionError("host control file writable")
+Path("config/web-reload").touch()
+Path("config/bench_build.lock").write_text("lock")
+Path("config/pids/probe").write_text("pid")
+'''
+        command = [shutil.which("bwrap"), "--die-with-parent", "--unshare-pid",
+                   "--ro-bind", "/nix/store", "/nix/store", "--proc", "/proc",
+                   "--dev", "/dev", "--tmpfs", "/tmp",
+                   "--bind", str(slot), str(slot),
+                   *pi_task.reviewer_mount_args(app, slot),
+                   "--chdir", str(slot), "--", str(Path(sys.executable).resolve()), "-c", script]
+        with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=True) as process:
+            self.assertEqual("ready\n", process.stdout.readline())
+            pending = config / "attestation.tmp"
+            pending.write_text("trusted update")
+            os.replace(pending, config / "root-runtime-attestation.json")
+            _, stderr = process.communicate("continue\n", timeout=10)
+            self.assertEqual(0, process.returncode, stderr)
+        self.assertEqual("trusted update", (config / "root-runtime-attestation.json").read_text())
+
     def test_pane_reporting_targets_only_own_pane_and_is_bounded(self):
         with mock.patch.dict(os.environ, {
             "TUIOS_PANE_ID": "worker-pane", "TUIOS_SESSION": "workers",
@@ -376,6 +505,10 @@ class PiTaskPolicyTests(unittest.TestCase):
             dsf_args = pi_task.sandbox_args(
                 self.repo, layout, models, qwen_mcp, dsf_sockets)
             self.assertEqual(qwen_args, dsf_args)
+            frozen = pi_task.freeze_acceptance(stage, [self.repo / "other.txt"])
+            protected = pi_task.sandbox_args(self.repo, layout, models, qwen_mcp, qwen_sockets, frozen)
+            mount = ["--ro-bind", str(frozen[0][0]), str(self.repo / "other.txt")]
+            self.assertTrue(any(protected[i:i+3] == mount for i in range(len(protected)-2)))
             serialized = "\n".join(qwen_args)
             self.assertNotIn("--unshare-net", qwen_args)
             for required in (str(tuios), str(erpnext), str(layout.dotgit),

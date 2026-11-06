@@ -14,6 +14,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import selectors
+import shutil
 import stat
 import subprocess
 import sys
@@ -167,6 +168,77 @@ def w_app_links(root: Path) -> dict[str, str]:
 def w_scope_violations(before: dict[Path, dict]) -> list[str]:
     return [f"{app.name}: {problem}" for app, state in before.items()
             for problem in policy_violations(state, snapshot(app), set())]
+
+
+def acceptance_files(repo: Path, slot: Path | None, requested: list[str],
+                     allowed: set[str]) -> list[Path]:
+    """Reviewer-owned check code/data, distinct from editable candidate tests."""
+    paths = {Path(p) if Path(p).is_absolute() else repo / p for p in requested}
+    if slot:
+        paths.update((slot / "config").glob("*.py"))
+        paths.update((slot / "config").glob("*acceptance*.json"))
+        paths.add(slot / "toolchain.sh")
+    # Existing OpenSpec packets are reviewer-owned, not candidate source.
+    packet = repo / "openspec"
+    if packet.exists():
+        paths.update(p for p in packet.rglob("*") if p.is_file())
+    for path in paths:
+        if not path.is_file() or path.resolve() != path or not path.is_relative_to(slot or repo):
+            raise PolicyError(f"acceptance file must be a canonical regular file in this work area: {path}")
+        if path.is_relative_to(repo) and str(path.relative_to(repo)) in allowed:
+            raise PolicyError(f"acceptance file cannot also be worker-editable: {path}")
+    return sorted(paths)
+
+
+def freeze_acceptance(stage: Path, paths: list[Path]) -> list[tuple[Path, Path]]:
+    """Private copies prevent writable aliases/hard links changing the mounted bytes."""
+    copies = stage / "acceptance"
+    copies.mkdir()
+    frozen = []
+    for i, target in enumerate(paths):
+        source = copies / str(i)
+        shutil.copyfile(target, source)
+        source.chmod(stat.S_IMODE(target.stat().st_mode) & 0o555)
+        frozen.append((source, target))
+    return frozen
+
+
+def acceptance_violations(frozen: list[tuple[Path, Path]]) -> list[str]:
+    problems = []
+    for source, target in frozen:
+        try:
+            unchanged = target.resolve() == target and target.read_bytes() == source.read_bytes()
+        except OSError:
+            unchanged = False
+        if not unchanged:
+            problems.append(f"reviewer acceptance file changed: {target}")
+    return problems
+
+
+def reviewer_mount_args(repo: Path, slot: Path | None) -> list[str]:
+    """Live host-owned control files stay visible across atomic host updates.
+
+    In particular root-runtime-attestation.json can appear AFTER admission.
+    Never snapshot it or expose host /tmp. Only known mutable runtime paths
+    within config are writable; the config directory itself stays read-only.
+    """
+    args = []
+    directories = [repo / "openspec"]
+    if slot:
+        directories.append(slot / "config")
+    for directory in directories:
+        if directory.exists():
+            if directory.resolve() != directory or not directory.is_dir():
+                raise PolicyError(f"reviewer directory must be canonical: {directory}")
+            args += ["--ro-bind", str(directory), str(directory)]
+    if slot:
+        for name in ("pids", "web-reload", "bench_build.lock"):
+            path = slot / "config" / name
+            if path.exists():
+                if path.resolve() != path:
+                    raise PolicyError(f"runtime path must be canonical: {path}")
+                args += ["--bind", str(path), str(path)]
+    return args
 
 
 def git_layout(repo: Path) -> GitLayout:
@@ -619,7 +691,7 @@ def ensure_scoped(argv: list[str]) -> None:
     env["PI_TASK_SCOPED"] = "1"
     os.execvpe("systemd-run", [
         "systemd-run", "--user", "--scope", "--quiet", "--collect",
-        "-p", "MemoryMax=6G", "-p", "OOMPolicy=continue", "--",
+        "-p", "MemoryMax=6G", "-p", "MemorySwapMax=0", "-p", "OOMPolicy=continue", "--",
         sys.executable, str(Path(__file__).resolve()), *argv,
     ], env)
 
@@ -687,7 +759,8 @@ def write_mcp(stage: Path, bench: str | None,
 
 
 def sandbox_args(repo: Path, layout: GitLayout, models: Path, mcp: Path,
-                 extra_sockets: list[Path]) -> list[str]:
+                 extra_sockets: list[Path],
+                 frozen_acceptance: list[tuple[Path, Path]] | None = None) -> list[str]:
     source_agent = HOME / ".pi/agent"
     if not models.is_file():
         raise PolicyError(f"missing per-run Pi model config: {models}")
@@ -737,6 +810,9 @@ def sandbox_args(repo: Path, layout: GitLayout, models: Path, mcp: Path,
              "--dir", str(socket.parent), "--ro-bind", str(socket), str(socket)]
     for extra in extra_sockets:
         args += ["--ro-bind", str(extra), str(extra)]
+    args += reviewer_mount_args(repo, slot)
+    for source, target in frozen_acceptance or []:
+        args += ["--ro-bind", str(source), str(target)]
     env = {
         "HOME": str(HOME), "USER": os.environ.get("USER", "cristian"),
         "PATH": "/run/current-system/sw/bin", "TERM": "dumb", "LANG": "C.UTF-8",
@@ -820,6 +896,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                         help="exact project-relative file Pi may change (repeatable)")
     parser.add_argument("--allow-app", action="store_true",
                         help="review all source changes in the selected disposable W app; permits new files")
+    parser.add_argument("--acceptance-file", action="append", default=[], metavar="FILE",
+                        help="reviewer-owned check/dependency mounted read-only (repeatable; relative to cwd or absolute in own W)")
     parser.add_argument("--erpnext-bench", choices=sorted(ALLOWED_BENCHES), metavar="BENCH",
                         help="exclusive test bench/database allocated to this worker")
     parser.add_argument("--attempt", type=int, choices=(1, 2, 3), default=1,
@@ -925,11 +1003,13 @@ def main(argv: list[str] | None = None) -> int:
         app_links = w_app_links(slot) if slot else {}
         with tempfile.TemporaryDirectory(prefix="pi-task.", dir=runtime) as tmp:
             stage = Path(tmp)
+            frozen = freeze_acceptance(stage, acceptance_files(
+                repo, slot, args.acceptance_file, allowed))
             inference_mcp, inference_sockets = write_mcp(stage, args.erpnext_bench)
             models = write_run_models(stage, HOME / ".pi/agent/models.json",
                                       args.model, args.worker_id)
             sb = sandbox_args(repo, layout, models, inference_mcp,
-                              inference_sockets)
+                              inference_sockets, frozen)
             rules = stage / "rules.md"
             task_rules = worker_rules(args.model, allowed, args.success, args.allow_app)
             rules.write_text(task_rules + (
@@ -965,7 +1045,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(answer)
             after = snapshot(repo)
             effective_allowed = set(before["files"]) | set(after["files"]) if args.allow_app else allowed
-            problems = policy_violations(before, after, effective_allowed) + w_scope_violations(other_apps)
+            problems = (policy_violations(before, after, effective_allowed) +
+                        w_scope_violations(other_apps) + acceptance_violations(frozen))
             if slot and w_app_links(slot) != app_links:
                 problems.append("installed W app links changed")
             if problems:
@@ -980,12 +1061,13 @@ def main(argv: list[str] | None = None) -> int:
                 # The success command uses the exact same sandbox capabilities and
                 # 6 GiB outer scope as either trusted implementation provider.
                 success_sb = sandbox_args(repo, layout, models, inference_mcp,
-                                          inference_sockets)
+                                          inference_sockets, frozen)
                 test_rc = run(success_sb + ["--", *worker_command(repo, [
                     "/run/current-system/sw/bin/bash", "-c", args.success])]).returncode
                 after = snapshot(repo)
                 effective_allowed = set(before["files"]) | set(after["files"]) if args.allow_app else allowed
-                problems = policy_violations(before, after, effective_allowed) + w_scope_violations(other_apps)
+                problems = (policy_violations(before, after, effective_allowed) +
+                            w_scope_violations(other_apps) + acceptance_violations(frozen))
                 if slot and w_app_links(slot) != app_links:
                     problems.append("installed W app links changed")
                 if problems:

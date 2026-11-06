@@ -223,6 +223,31 @@ not claims of full packet capture.
 
 ## Guardrails and failures
 
+Worker scopes set `MemoryMax=6G` and `MemorySwapMax=0`. Existing processes keep
+their launch-time limits; this does not restart or change an active worker.
+
+Reviewer-owned acceptance files are copied into private per-run storage and
+mounted read-only at their original paths in BOTH the worker and final-check
+sandboxes. Defaults: W `config/*.py`, `config/*acceptance*.json`, `toolchain.sh`,
+and every existing OpenSpec packet file (including briefs and baseline manifests).
+The OpenSpec directory itself is read-only. W `config/` is also read-only except
+its existing `pids/`, `web-reload` and `bench_build.lock` runtime paths. Host-written
+attestations/approvals there remain live across atomic replacement, including
+`root-runtime-attestation.json` created after admission; they are not frozen copies.
+Host-only approval files outside W remain hidden. The reviewer must validate the
+trusted baseline before launch, and keep attestation inputs outside worker scope.
+Declare any additional checker, fixture or expected-result dependency with
+repeatable `--acceptance-file PATH` (relative to cwd or absolute within own W).
+Paths must be existing canonical regular files, not symlinks; explicit `--allow`
+overlap is refused, and `--allow-app` does not override protected mounts.
+The originals are compared with the private copies before and after final checks,
+so a writable hard-link alias or renamed parent cannot silently change the gate.
+Do not include worker-authored tests in this protected set when developing tests
+is the assignment. Those tests are still subject to independent reviewer approval.
+This preserves check definitions; it is not a claim that arbitrary candidate code
+running in the same interpreter cannot affect a test harness. Independent review
+and authoritative expected outcomes remain necessary.
+
 Every run retains the 6 GiB scope, mandatory success command, reviewed source
 scope (exact files or one disposable W app), HEAD/index and concurrent-tree guards,
 minimal HOME, empty `/var`, and
