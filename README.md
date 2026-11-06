@@ -33,21 +33,26 @@ and lands on the persistent `/home` / `/var` volumes.
   Nix-packaged (`pkgs/pi-coding-agent`) and exposes exactly two allowlisted models:
   local `strata/qwen3.8-flash` (default, one global lane) and the bake-off-verified
   Melious `deepseek-v4.1-flash-1017`. Every batch includes exactly one local lane;
-  explicitly approved external lanes use persistent live cap/worker controls and
-  stable worker IDs, with each worker in its own TUIOS worktree.
+  standing authorization permits up to five DSF lanes within cap 200. Live cap/worker
+  changes still require Cristian's direction. Every worker has a stable identity and
+  its own TUIOS worktree.
   Melious is trusted. Local Qwen, DSF, and success checks have capability-equivalent
   full-worktree/read-only-Git environments with Context7, local SearXNG, exclusive
   test-bench ERPNext, and session-scoped no-pane-typing TUIOS MCPs.
   Full policy and reviewer workflow: [docs/pi-task-production.md](docs/pi-task-production.md).
   A single local implementation slice looks like:
   `pi-task --cwd ~/development/project --allow src/file.py --allow tests/test_file.py --success 'pytest -q tests/test_file.py' 'Implement the approved OpenSpec slice'`.
-  The wrapper requires an exact file allowlist and success command, caps the whole run
+  The worker receives the success command and autonomously inspects/implements/tests/fixes;
+  the wrapper independently reruns it. The wrapper requires an exact file allowlist and
+  caps the whole run
   at 6 GiB, and uses a minimal-home bubblewrap sandbox (`/var` is empty). Local Qwen
   and both providers see the allocated worktree plus `.git` read-only. Raw Melious and
   ERPNext credentials stay behind local brokers; the homelab SearXNG endpoint needs none.
   The wrapper refuses HEAD/index movement or any changed
   Git-visible path outside the allowlist. Pi never commits; the wrapper reports both
-  command statuses and the final diff stat.
+  command statuses and the final diff stat. Live sanitized tool/usage/connect metadata is
+  written to `~/.local/state/pi-task/audit.jsonl`; SearXNG outages are degraded unless the
+  packet explicitly uses `--require-web`.
 - **Melious key** (per VM, user-installed once):
   `ssh devhobby 'sudo install -m 600 /dev/stdin /var/lib/melious.key' <<< "sk-..."`
   `omp-models-seed.service` renders `~/.omp/agent/models.yml` from it (re-runs by itself

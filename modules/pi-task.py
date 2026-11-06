@@ -5,11 +5,15 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import fcntl
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
+import selectors
 import stat
 import subprocess
 import sys
@@ -33,6 +37,11 @@ MODEL_SPECS = {
 }
 ALLOWED_BENCHES = {"test", *{f"test{i}" for i in range(1, 8)}}
 SEARXNG_HEALTH = "http://192.168.40.28:8080/healthz"
+WORKER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+INET_RE = re.compile(
+    r"sa_family=AF_INET6?.*?sin6?_port=htons\((\d+)\).*?"
+    r"(?:inet_addr\(|inet_pton\(AF_INET6, )\"([^\"]+)\"")
+UNIX_RE = re.compile(r"sa_family=AF_UNIX.*?sun_path=\"([^\"]+)\"")
 
 
 class PolicyError(RuntimeError):
@@ -44,6 +53,35 @@ class GitLayout:
     dotgit: Path
     gitdir: Path
     common: Path
+
+
+class AuditLogger:
+    """Append only non-content run telemetry for reviewer supervision."""
+
+    def __init__(self, run_id: str, provider: str, worker_id: str):
+        state = Path(os.environ.get("XDG_STATE_HOME", HOME / ".local/state")) / "pi-task"
+        state.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(state, 0o700)
+        self.path = state / "audit.jsonl"
+        self.context = {"run_id": run_id, "provider": provider, "worker_id": worker_id}
+        self.tool_started: dict[str, float] = {}
+
+    def write(self, kind: str, **metadata) -> None:
+        record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **self.context, "kind": kind, **metadata,
+        }
+        lock_path = self.path.with_suffix(".lock")
+        with lock_path.open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if self.path.exists() and self.path.stat().st_size >= 10 * 1024 * 1024:
+                previous = self.path.with_suffix(".jsonl.1")
+                os.replace(self.path, previous)
+            with self.path.open("a") as handle:
+                os.chmod(self.path, 0o600)
+                handle.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
 
 
 def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -228,13 +266,14 @@ def check_local_health() -> None:
         raise PolicyError(f"local Qwen model unavailable: required {expected}")
 
 
-def check_web_mcp_health() -> None:
+def check_web_mcp_health() -> tuple[bool, str]:
     try:
         with urlopen(SEARXNG_HEALTH, timeout=5) as response:
             if response.status != 200:
                 raise ValueError(f"HTTP {response.status}")
     except (OSError, URLError, ValueError, AttributeError) as exc:
-        raise PolicyError(f"SearXNG MCP backend unavailable: {exc}") from exc
+        return False, str(exc)
+    return True, "ok"
 
 
 def validate_model_config(path: Path) -> None:
@@ -309,6 +348,162 @@ def accounting(events: Path, friendly_model: str, elapsed: float, pi_rc: int) ->
           f"cache_read={totals['cache_read']} cost={totals['cost']:.6f} "
           f"elapsed={elapsed:.2f}s status={pi_rc} ──")
     return totals
+
+
+def network_metadata(line: str) -> dict | None:
+    """Normalize one strace connect record without retaining payload or commands."""
+    if "connect(" not in line:
+        return None
+    result = "pending"
+    if " = " in line:
+        result = line.rsplit(" = ", 1)[1].strip()[:80]
+    inet = INET_RE.search(line)
+    if inet:
+        port = int(inet.group(1))
+        address = inet.group(2)
+        try:
+            ip = ipaddress.ip_address(address)
+            if ip.is_loopback:
+                category = "loopback"
+            elif ip.is_private:
+                category = "private-network"
+            else:
+                category = "public-internet"
+        except ValueError:
+            category = "network-unknown"
+        known = {
+            ("127.0.0.1", 5098): "melious-control-relay",
+            ("192.168.40.28", 9000): "local-qwen-provider",
+            ("192.168.40.28", 8080): "searxng",
+        }.get((address, port))
+        return {"family": "ip", "destination": f"{address}:{port}",
+                "category": known or category, "result": result}
+    unix = UNIX_RE.search(line)
+    if unix:
+        path = unix.group(1)
+        if "tuios" in path:
+            category = "tuios-socket"
+        elif "erpnext" in path:
+            category = "erpnext-socket"
+        elif "pi-task-control" in path:
+            category = "pi-task-control-socket"
+        elif "nix" in path:
+            category = "nix-daemon-socket"
+        else:
+            category = "local-unix-socket"
+        return {"family": "unix", "category": category, "result": result}
+    return {"family": "unknown", "category": "unknown-connect", "result": result}
+
+
+def audit_pi_event(event: dict, audit: AuditLogger) -> None:
+    event_type = event.get("type")
+    if event_type == "tool_execution_start":
+        call_id = str(event.get("toolCallId") or "")[:128]
+        audit.tool_started[call_id] = time.monotonic()
+        audit.write("tool-start", tool=str(event.get("toolName") or "unknown")[:128],
+                    call_id=call_id)
+        print(f"── pi-task monitor: tool-start "
+              f"{str(event.get('toolName') or 'unknown')[:128]} ──", file=sys.stderr)
+    elif event_type == "tool_execution_end":
+        failed = bool(event.get("isError"))
+        call_id = str(event.get("toolCallId") or "")[:128]
+        started = audit.tool_started.pop(call_id, None)
+        audit.write("tool-end", tool=str(event.get("toolName") or "unknown")[:128],
+                    call_id=call_id, result="error" if failed else "ok",
+                    elapsed_ms=None if started is None else round(
+                        (time.monotonic() - started) * 1000, 3))
+        print(f"── pi-task monitor: tool-end "
+              f"{str(event.get('toolName') or 'unknown')[:128]} "
+              f"result={'error' if failed else 'ok'} ──", file=sys.stderr)
+    elif event_type == "message_end":
+        message = event.get("message") or {}
+        if message.get("role") != "assistant":
+            return
+        usage = message.get("usage") or {}
+        cost = usage.get("cost") or {}
+        audit.write(
+            "usage", model=str(message.get("model") or "")[:128],
+            input=int(usage.get("input") or 0), output=int(usage.get("output") or 0),
+            cache_read=int(usage.get("cacheRead") or 0),
+            cost=float(cost.get("total") or 0) if isinstance(cost, dict) else 0,
+        )
+
+
+def monitored_run(command: list[str], events: Path, audit: AuditLogger) -> int:
+    """Run the shared worker pipeline with live tool and connect telemetry."""
+    read_fd, write_fd = os.pipe()
+    traced = [
+        "strace", "-f", "-qq", "-e", "trace=connect", "-s", "0",
+        "-o", f"/proc/self/fd/{write_fd}", "--", *command,
+    ]
+    process = subprocess.Popen(traced, stdout=subprocess.PIPE, pass_fds=(write_fd,))
+    os.close(write_fd)
+    if process.stdout is None:
+        os.close(read_fd)
+        raise PolicyError("cannot monitor Pi event stream")
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ, "event")
+    selector.register(read_fd, selectors.EVENT_READ, "network")
+    buffers = {"event": b"", "network": b""}
+    with events.open("wb") as event_file:
+        while selector.get_map():
+            for key, _ in selector.select():
+                chunk = os.read(key.fd, 65536)
+                stream = key.data
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    tail = buffers[stream]
+                    if tail:
+                        lines = [tail]
+                    else:
+                        lines = []
+                else:
+                    data = buffers[stream] + chunk
+                    parts = data.split(b"\n")
+                    buffers[stream] = parts.pop()
+                    lines = parts
+                for raw in lines:
+                    if stream == "event":
+                        event_file.write(raw + b"\n")
+                        event_file.flush()
+                        try:
+                            audit_pi_event(json.loads(raw), audit)
+                        except (ValueError, TypeError):
+                            continue
+                    else:
+                        metadata = network_metadata(raw.decode(errors="replace"))
+                        if metadata:
+                            audit.write("network-connect", **metadata)
+                            print("── pi-task monitor: network "
+                                  f"category={metadata['category']} "
+                                  f"destination={metadata.get('destination', 'local')} "
+                                  f"result={metadata['result']} ──", file=sys.stderr)
+        event_file.flush()
+    selector.close()
+    process.stdout.close()
+    os.close(read_fd)
+    return process.wait()
+
+
+def worker_rules(model: str, allowed: set[str], success: str) -> str:
+    allowed_text = "\n".join(f"- {name}" for name in sorted(allowed))
+    return (
+        "You are the autonomous bounded implementation worker for exactly one "
+        "self-contained OpenSpec work packet. Inspect the relevant project and Git "
+        "context, implement the complete packet, run its acceptance command, diagnose "
+        "failures, and iterate test/fix until it passes or you find a genuine blocker. "
+        "Do not ask for step-by-step approval inside the authorized scope.\n"
+        f"Your selected production model is {model}; never switch providers or models. "
+        "Never commit, push, change Git refs, invoke OMP, delegate, or use another model. "
+        "Make the smallest implementation needed.\n"
+        "Melious is a trusted provider. You have the same allocated project, read-only "
+        "Git history, shell tools, and MCP capabilities as the local worker.\n"
+        "You may change exactly these project-relative files and no others:\n" + allowed_text +
+        "\nYour required acceptance command is:\n" + success +
+        "\nRun that command yourself during implementation and repair failures within scope. "
+        "The wrapper will independently run it again after you exit. End with a concise "
+        "change/test summary or a precise blocker.\n"
+    )
 
 
 def ensure_scoped(argv: list[str]) -> None:
@@ -421,10 +616,6 @@ def sandbox_args(repo: Path, layout: GitLayout, models: Path, mcp: Path,
     return args + ["--chdir", str(repo)]
 
 
-def pi_command(spec: dict, model_args: list[str]) -> list[str]:
-    return ["pi", *model_args]
-
-
 def final_message(events: Path) -> str:
     answer = ""
     for line in events.read_text(errors="replace").splitlines():
@@ -454,6 +645,14 @@ def report(repo: Path, pi_rc: int, test_rc: int | None) -> None:
         print(untracked)
 
 
+def report_failure(attempt: int, classification: str, audit: AuditLogger) -> None:
+    takeover = attempt >= 3
+    audit.write("run-failure", attempt=attempt, classification=classification,
+                takeover_required=takeover)
+    print(f"── pi-task failure: attempt={attempt}/3 classification={classification} "
+          f"takeover={'required' if takeover else 'not-yet'} ──", file=sys.stderr)
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run one bounded Pi implementation slice in the production worker pool")
@@ -466,6 +665,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                         help="exact project-relative file Pi may change (repeatable)")
     parser.add_argument("--erpnext-bench", choices=sorted(ALLOWED_BENCHES), metavar="BENCH",
                         help="exclusive test bench/database allocated to this worker")
+    parser.add_argument("--attempt", type=int, choices=(1, 2, 3), default=1,
+                        help="attempt number for the supervised three-failure takeover rule")
+    parser.add_argument("--require-web", action="store_true",
+                        help="fail admission when the optional SearXNG tool is unavailable")
     parser.add_argument("--success", required=True, metavar="COMMAND",
                         help="required success command, run in the same sandbox")
     parser.add_argument("brief", help="one bounded OpenSpec implementation slice")
@@ -476,8 +679,11 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     registered_worker = None
     final_outcome = "failed"
+    audit = None
+    attempt = 1
     try:
         args = parse_args(argv)
+        attempt = args.attempt
         repo = validate_repo(args.cwd)
         layout = git_layout(repo)
         allowed = validate_allowed(repo, args.allow)
@@ -486,13 +692,28 @@ def main(argv: list[str] | None = None) -> int:
             raise PolicyError("--worker-id is required for melious-dsf")
         if args.model != "melious-dsf" and args.worker_id:
             raise PolicyError("--worker-id is only valid for melious-dsf")
+        if args.worker_id and not WORKER_RE.fullmatch(args.worker_id):
+            raise PolicyError("--worker-id must contain only letters, digits, dot, underscore or dash")
         erp_root = HOME / "development/erpnext"
         is_erpnext = repo.is_relative_to(erp_root) or layout.common.is_relative_to(erp_root)
         if is_erpnext and not args.erpnext_bench:
             raise PolicyError("ERPNext work requires an exclusive --erpnext-bench test/test1..test7")
         ensure_scoped(argv)
         runtime = Path(os.environ["XDG_RUNTIME_DIR"])
-        check_web_mcp_health()
+        worker_identity = args.worker_id or "local-qwen"
+        run_id = f"{worker_identity}-a{args.attempt}-{int(time.time())}-{os.getpid()}"
+        audit = AuditLogger(run_id, args.model, worker_identity)
+        audit.write("run-start", model=spec["event_model"], attempt=args.attempt,
+                    allowed_file_count=len(allowed), erpnext_bench=bool(args.erpnext_bench))
+        web_ok, web_detail = check_web_mcp_health()
+        audit.write("capability", capability="searxng",
+                    result="available" if web_ok else "degraded")
+        if not web_ok:
+            message = f"SearXNG MCP backend unavailable (degraded): {web_detail}"
+            if args.require_web:
+                raise PolicyError(message)
+            print(f"pi-task: WARNING: {message}; continuing because --require-web was not set",
+                  file=sys.stderr)
         provider_lock = None
         if args.model == "melious-dsf":
             check_melious_health()
@@ -526,32 +747,21 @@ def main(argv: list[str] | None = None) -> int:
                                       args.model, args.worker_id)
             sb = sandbox_args(repo, layout, models, inference_mcp,
                               inference_sockets)
-            allowed_text = "\n".join(f"- {name}" for name in sorted(allowed))
             rules = stage / "rules.md"
-            rules.write_text(
-                "You are the bounded implementation worker for exactly one OpenSpec slice.\n"
-                f"Your selected production model is {args.model}; never switch providers or models. "
-                "Never commit, push, change Git refs, invoke OMP, delegate, or use another model. "
-                "Make the smallest implementation needed.\n"
-                "Melious is a trusted provider. You have the same allocated project, read-only "
-                "Git history, shell tools, and MCP capabilities as the local worker.\n"
-                "You may change exactly these project-relative files and no others:\n" + allowed_text +
-                "\nThe wrapper, not you, runs the success command. End with a concise change summary.\n")
+            rules.write_text(worker_rules(args.model, allowed, args.success))
             events = stage / "events.jsonl"
             prompt = f"Implement this single bounded slice:\n\n{args.brief}"
             started = time.monotonic()
             model_args = ["-p", "--mode", "json", "--approve", "--no-session",
                           "--model", spec["pi_model"], "--append-system-prompt",
                           rules.read_text(), "--", prompt]
-            with events.open("wb") as output:
-                pi_result = run(sb + ["--", *pi_command(spec, model_args)],
-                                stdout=output)
-            pi_rc = pi_result.returncode
+            pi_rc = monitored_run(sb + ["--", "pi", *model_args], events, audit)
             elapsed = time.monotonic() - started
             try:
                 accounting(events, args.model, elapsed, pi_rc)
             except PolicyError as exc:
                 print(f"pi-task: REFUSED: {exc}", file=sys.stderr)
+                report_failure(args.attempt, "model", audit)
                 report(repo, pi_rc, None)
                 return EXIT_POLICY
             answer = final_message(events)
@@ -561,6 +771,7 @@ def main(argv: list[str] | None = None) -> int:
             if problems:
                 for problem in problems:
                     print(f"pi-task: REFUSED: {problem}", file=sys.stderr)
+                report_failure(args.attempt, "scope", audit)
                 report(repo, pi_rc, None)
                 return EXIT_POLICY
             test_rc: int | None = None
@@ -575,15 +786,23 @@ def main(argv: list[str] | None = None) -> int:
                 if problems:
                     for problem in problems:
                         print(f"pi-task: REFUSED after success command: {problem}", file=sys.stderr)
+                    report_failure(args.attempt, "scope", audit)
                     report(repo, pi_rc, test_rc)
                     return EXIT_POLICY
             report(repo, pi_rc, test_rc)
             result_rc = pi_rc if pi_rc else (test_rc or 0)
             if result_rc == 0:
                 final_outcome = "completed"
+                audit.write("run-end", attempt=args.attempt, result="completed",
+                            pi_status=pi_rc, success_status=test_rc,
+                            elapsed_seconds=round(elapsed, 3))
+            else:
+                report_failure(args.attempt, "ambiguous" if pi_rc else "test", audit)
             return result_rc
     except PolicyError as exc:
         print(f"pi-task: {exc}", file=sys.stderr)
+        if audit:
+            report_failure(attempt, "wrapper-infrastructure", audit)
         return 2
     finally:
         if registered_worker:

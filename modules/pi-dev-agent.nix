@@ -19,7 +19,7 @@ let
   productionBenches = [ "test" "test1" "test2" "test3" "test4" "test5" "test6" "test7" ];
 
   piTask = pkgs.runCommand "pi-task" {
-    nativeBuildInputs = [ pkgs.makeWrapper pkgs.python3 pkgs.git config.ompDevAgent.bubblewrap ];
+    nativeBuildInputs = [ pkgs.makeWrapper pkgs.python3 pkgs.git pkgs.strace config.ompDevAgent.bubblewrap ];
   } ''
     cp ${./pi-task.py} pi-task.py
     cp ${./test_pi_task.py} test_pi_task.py
@@ -28,7 +28,7 @@ let
     makeWrapper ${pkgs.python3}/bin/python3 $out/bin/pi-task \
       --add-flags $out/libexec/pi-task.py \
       --prefix PATH : ${lib.makeBinPath [
-        pkgs.bash config.ompDevAgent.bubblewrap pkgs.coreutils pkgs.git pkgs.systemd piPkg
+        pkgs.bash config.ompDevAgent.bubblewrap pkgs.coreutils pkgs.git pkgs.strace pkgs.systemd piPkg
       ]}
     cat > $out/bin/pi-task-worktree <<'EOF'
     #!${pkgs.runtimeShell}

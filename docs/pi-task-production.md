@@ -9,8 +9,10 @@ diff review, and final commit. Workers never commit.
 Only `local-qwen` (the default, exact model
 `homelab/strata/qwen3.8-flash`) and `melious-dsf` (exact model
 `melious/deepseek-v4.1-flash-1017`) are exposed. Every delegated batch has
-exactly one local-Qwen lane. Reviewers may add DSF lanes only after explicit
-Cristian instruction.
+exactly one local-Qwen lane. The standing authorization is that lane plus zero
+to five DSF lanes within the live 200-credit cap; an ordinary batch inside those
+bounds does not need fresh approval. Changing cap or worker limit remains a
+governance action taken only when Cristian directs it.
 
 Local Qwen has one global exclusive lane. DSF uses two independent persistent
 controls: `monthly_cap` starts at 200 credits and `worker_limit` starts at 5.
@@ -65,23 +67,45 @@ pi-task-worktree new pi/BATCH-qwen --repo ~/development/PROJECT --detach
 pi-task-worktree new pi/BATCH-dsf1 --repo ~/development/PROJECT --detach
 ```
 
+Prepare one substantial, self-contained OpenSpec work packet. Include the
+objective, relevant context/spec references, exact writable files, acceptance
+criteria and command, dependencies, allocated worktree/bench, and expected
+report. The worker autonomously inspects, implements, runs the command, diagnoses
+failures, and iterates test/fix within that scope. The wrapper independently
+runs the same command once more after Pi exits.
+
+Template:
+
+```text
+Objective: <complete bounded outcome>
+Context/spec: <OpenSpec and relevant project references>
+Allowed scope: <what may change; --allow remains authoritative>
+Acceptance criteria: <observable behavior>
+Required tests: <the exact --success command>
+Dependencies/allocation: <worktree, bench, related services>
+Report: <diff, tests, blocker details if any>
+```
+
 Run exactly one local lane:
 
 ```sh
 pi-task --cwd "$PWD" --model local-qwen \
+  --attempt 1 \
   --allow src/feature.py --allow tests/test_feature.py \
   --success 'pytest -q tests/test_feature.py' \
-  'Implement the approved OpenSpec slice.'
+  'Objective: implement the complete approved OpenSpec packet. ...'
 ```
 
-For each explicitly approved DSF lane, assign a unique ID. Melious is trusted;
-the allocated worktree and development capabilities are the same as the local lane:
+For each DSF lane within the standing authorization, assign a unique stable ID.
+Melious is trusted; the allocated worktree and development capabilities are the
+same as the local lane:
 
 ```sh
 pi-task --cwd "$PWD" --model melious-dsf --worker-id BATCH-dsf1 \
+  --attempt 1 \
   --allow src/feature.py --allow tests/test_feature.py \
   --success 'pytest -q tests/test_feature.py' \
-  'Implement the reviewer-approved slice.'
+  'Objective: implement the complete approved OpenSpec packet. ...'
 ```
 
 Use `tuios new-window -s SESSION ... -- pi-task ...` for orchestration. Review
@@ -94,6 +118,41 @@ ERPNext integration lanes must each receive a different running test bench via
 bench lock. Both providers and the success check expose only that bench's
 filtered MCP socket; raw ERPNext credentials remain behind the broker. UAT and
 production sites are never allocatable.
+
+SearXNG is optional. An outage is reported as degraded and does not block
+unrelated coding. Add `--require-web` only when web access is an acceptance
+dependency; then admission fails clearly if SearXNG is unavailable.
+
+## Live monitoring and audit
+
+Both providers use one execution and telemetry path. Pi JSON is consumed while
+the process runs: tool start/end and per-turn model/token/cost usage are printed
+live and appended as sanitized JSONL to
+`~/.local/state/pi-task/audit.jsonl`. The log records run/worker/provider/model,
+timestamps, tool names, result status, normalized network destinations, and
+usage only. It never records briefs/prompts, source, command arguments, tool
+payloads/results, credentials, URL paths, or query strings. Writes are locked
+across workers; at 10 MiB the file rotates to one `audit.jsonl.1` backup,
+bounding retained telemetry near 20 MiB.
+
+Observe a live worker through its TUIOS pane, or follow durable metadata:
+
+```sh
+tuios capture-pane -s SESSION -w WORKER --scrollback --lines 80
+tail -F ~/.local/state/pi-task/audit.jsonl | jq -c .
+```
+
+Network monitoring traces `connect(2)` for Pi and every child process in the
+worker sandbox. It records IP address/port plus a public/private/known-service
+category, or only a category for Unix sockets. This covers normal TCP and
+connected-UDP clients, including shell tools and MCP subprocesses, without a
+domain allowlist. It does not see payloads, URL/hostname details, unconnected
+datagrams, or traffic performed later by another service. In particular, a Nix
+download delegated through the daemon is visible only as a Nix-daemon socket
+connection, and DSF is visible as its localhost control relay; the relay's
+declarative upstream is fixed to `https://api.melious.ai` and its controller
+audit records reservation/settlement. These are explicit attribution limits,
+not claims of full packet capture.
 
 ## Guardrails and failures
 
@@ -111,8 +170,10 @@ bench socket broker; SearXNG uses the same local MCP server and credential-free
 homelab search endpoint used behind the bake-off gateway. Provider, credential, model, control,
 worktree, bench, scope, and test failures name their cause and never fall back.
 
-After three unsuccessful attempts on one slice, stop delegating and take over
-at the frontier layer. Append the classified failure to
+Number retries with `--attempt 1`, `2`, then `3`; there is no automatic retry.
+Each failure prints and audits a bounded classification and attempt 3 explicitly
+marks takeover required. After three unsuccessful attempts on one slice, stop
+delegating and take over at the frontier layer. Append the classified failure to
 `~/org-erpnext/pi-qwen-failures.org`: `model`, `scope`, `test`, `MCP`,
 `wrapper-infrastructure`, or `ambiguous`. Three infrastructure failures also
 trigger takeover but must not be blamed on either model.

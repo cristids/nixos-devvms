@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 SPEC = importlib.util.spec_from_file_location("pi_task", Path(__file__).with_name("pi-task.py"))
@@ -21,7 +22,9 @@ class PiTaskPolicyTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.bound_sockets = []
         self.old_home = pi_task.HOME
+        self.old_state_home = os.environ.get("XDG_STATE_HOME")
         pi_task.HOME = Path(self.temp.name)
+        os.environ["XDG_STATE_HOME"] = str(pi_task.HOME / "state")
         self.repo = pi_task.HOME / "scratch/repo"
         self.repo.mkdir(parents=True)
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
@@ -36,6 +39,10 @@ class PiTaskPolicyTests(unittest.TestCase):
         for bound in self.bound_sockets:
             bound.close()
         pi_task.HOME = self.old_home
+        if self.old_state_home is None:
+            os.environ.pop("XDG_STATE_HOME", None)
+        else:
+            os.environ["XDG_STATE_HOME"] = self.old_state_home
         self.temp.cleanup()
 
     def bind_socket(self, path):
@@ -239,11 +246,6 @@ class PiTaskPolicyTests(unittest.TestCase):
             dsf_args = pi_task.sandbox_args(
                 self.repo, layout, models, qwen_mcp, dsf_sockets)
             self.assertEqual(qwen_args, dsf_args)
-            model_args = ["-p", "--model", "placeholder"]
-            self.assertEqual(
-                pi_task.pi_command(pi_task.MODEL_SPECS["local-qwen"], model_args),
-                pi_task.pi_command(pi_task.MODEL_SPECS["melious-dsf"], model_args),
-            )
             serialized = "\n".join(qwen_args)
             self.assertNotIn("--unshare-net", qwen_args)
             for required in (str(tuios), str(erpnext), str(layout.dotgit),
@@ -296,6 +298,85 @@ class PiTaskPolicyTests(unittest.TestCase):
         }) + "\n")
         with self.assertRaisesRegex(pi_task.PolicyError, "model identity mismatch"):
             pi_task.accounting(events, "melious-dsf", 1.0, 0)
+
+    def test_web_health_is_optional_unless_explicitly_required(self):
+        with mock.patch.object(pi_task, "urlopen", side_effect=OSError("offline")):
+            available, detail = pi_task.check_web_mcp_health()
+        self.assertFalse(available)
+        self.assertIn("offline", detail)
+        optional = pi_task.parse_args(["--success", "true", "brief"])
+        required = pi_task.parse_args(["--require-web", "--success", "true", "brief"])
+        self.assertFalse(optional.require_web)
+        self.assertTrue(required.require_web)
+
+    def test_worker_receives_acceptance_and_autonomous_repair_instructions(self):
+        rules = pi_task.worker_rules(
+            "melious-dsf", {"src/feature.py", "tests/test_feature.py"},
+            "pytest -q tests/test_feature.py",
+        )
+        self.assertIn("autonomous bounded implementation worker", rules)
+        self.assertIn("iterate test/fix until it passes", rules)
+        self.assertIn("pytest -q tests/test_feature.py", rules)
+        self.assertIn("wrapper will independently run it again", rules)
+        self.assertNotIn("wrapper, not you", rules.lower())
+        self.assertIn("src/feature.py", rules)
+
+    def test_attempt_tracking_is_bounded_to_three(self):
+        self.assertEqual(3, pi_task.parse_args([
+            "--attempt", "3", "--success", "true", "brief"]).attempt)
+        with self.assertRaises(SystemExit):
+            pi_task.parse_args(["--attempt", "4", "--success", "true", "brief"])
+
+    def test_network_metadata_records_destinations_without_payloads(self):
+        ipv4 = pi_task.network_metadata(
+            '9 connect(3, {sa_family=AF_INET, sin_port=htons(8080), '
+            'sin_addr=inet_addr("192.168.40.28")}, 16) = 0')
+        self.assertEqual("searxng", ipv4["category"])
+        self.assertEqual("192.168.40.28:8080", ipv4["destination"])
+        public = pi_task.network_metadata(
+            '9 connect(3, {sa_family=AF_INET, sin_port=htons(443), '
+            'sin_addr=inet_addr("1.1.1.1")}, 16) = -1 EINPROGRESS')
+        self.assertEqual("public-internet", public["category"])
+        unix = pi_task.network_metadata(
+            '9 connect(3, {sa_family=AF_UNIX, sun_path="/run/user/1000/tuios.sock"}, 32) = 0')
+        self.assertEqual("tuios-socket", unix["category"])
+        self.assertNotIn("sun_path", json.dumps(unix))
+
+    def test_live_monitor_persists_sanitized_tool_usage_and_network_metadata(self):
+        audit = pi_task.AuditLogger("run-test", "local-qwen", "local-qwen")
+        events = pi_task.HOME / "events.jsonl"
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        secret = "PROMPT-SOURCE-SECRET"
+        script = (
+            "import json,socket,time;"
+            "print(json.dumps({'type':'tool_execution_start','toolName':'bash',"
+            f"'toolCallId':'call-1','args':{{'command':'{secret}'}}}}),flush=True);"
+            f"s=socket.socket();s.connect(('127.0.0.1',{port}));s.close();time.sleep(0.05);"
+            "print(json.dumps({'type':'tool_execution_end','toolName':'bash',"
+            "'toolCallId':'call-1','isError':False}),flush=True);"
+            "print(json.dumps({'type':'message_end','message':{'role':'assistant',"
+            "'model':'strata/qwen3.8-flash','content':'PRIVATE SOURCE',"
+            "'usage':{'input':3,'output':2,'cacheRead':1,'cost':{'total':0}}}}),flush=True)"
+        )
+        try:
+            rc = pi_task.monitored_run([sys.executable, "-c", script], events, audit)
+        finally:
+            listener.close()
+        self.assertEqual(0, rc)
+        records = [json.loads(line) for line in audit.path.read_text().splitlines()]
+        self.assertEqual(
+            ["tool-start", "network-connect", "tool-end", "usage"],
+            [record["kind"] for record in records],
+        )
+        persisted = audit.path.read_text()
+        self.assertNotIn(secret, persisted)
+        self.assertNotIn("PRIVATE SOURCE", persisted)
+        self.assertIn(f"127.0.0.1:{port}", persisted)
+        self.assertIn("loopback", persisted)
+        self.assertIn("strata/qwen3.8-flash", persisted)
 
 
 if __name__ == "__main__":
