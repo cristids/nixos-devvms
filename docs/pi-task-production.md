@@ -6,6 +6,13 @@ diff review, and final commit. Workers never commit.
 
 ## Models and live controls
 
+Image input is declared for local Qwen, DSF1017, GLM5.3Flash, KimiK3 and KimiK2.7Code.
+GLM5.3 and Qwen3.8Max remain text-only. Pi's read tool can attach PNG screenshots
+for the image-capable models. Local Qwen has a reviewer-reported image probe;
+Melious declarations follow its2026-11-07 catalog, not a completed visual-quality
+evaluation. Existing workers keep their per-run config snapshot until a new launch
+or explicit resume. Screenshot review remains part of reviewer acceptance.
+
 Only tested coding models are exposed. `local-qwen` remains the default
 (`homelab/strata/qwen3.8-flash`). External selections are `melious-dsf`
 (`deepseek-v4.1-flash-1017`), `melious-glm-5.3`, `melious-glm-5.3-flash`,

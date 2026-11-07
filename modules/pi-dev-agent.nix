@@ -87,6 +87,7 @@ let
         inherit compat;
         models = [{
           id = "strata/qwen3.8-flash";
+          input = [ "text" "image" ];
           reasoning = true;
           contextWindow = 262144;
           # Provider maximum unavailable: explicitly configured fallback cap.
@@ -110,6 +111,11 @@ let
         inherit compat;
         models = map (model: {
           id = model.id;
+          # Melious input_modalities catalog, verified 2026-11-07. Pi supports
+          # image attachments here, not the catalog's additional video modality.
+          input = [ "text" ] ++ lib.optional (builtins.elem model.id [
+            "deepseek-v4.1-flash-1017" "glm-5.3-flash" "kimi-k3" "kimi-k2.7-code"
+          ]) "image";
           reasoning = true;
           contextWindow = model.contextWindow;
           # Melious catalog max_output_tokens is null (2026-11-07).
