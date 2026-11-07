@@ -26,6 +26,7 @@ from urllib.request import Request, urlopen
 
 EXIT_POLICY = 6
 EXIT_LENGTH = 7
+EXIT_REPLY = 8
 HOME = Path("/home/cristian")
 MODEL_SPECS = {
     "local-qwen": {
@@ -616,6 +617,24 @@ def length_stop(event: dict) -> bool:
         if isinstance(choice, dict))
 
 
+def final_reply_problem(message: dict | None) -> str | None:
+    if message is None:
+        return "missing-final-reply"
+    content = message.get("content") or []
+    meaningful = bool(content.strip()) if isinstance(content, str) else any(
+        isinstance(block, dict) and (
+            block.get("type") == "toolCall" or
+            (block.get("type") == "text" and str(block.get("text") or "").strip()))
+        for block in content)
+    if not meaningful:
+        return "empty-final-reply"
+    usage = message.get("usage")
+    # Zero is a reported measurement, not missing usage. Cost is optional.
+    if not isinstance(usage, dict) or any(usage.get(key) is None for key in ("input", "output")):
+        return "missing-final-usage"
+    return None
+
+
 def monitored_run(command: list[str], events: Path, audit: AuditLogger,
                   max_tokens: int = 65536) -> int:
     """Run the shared worker pipeline with live tool and connect telemetry."""
@@ -636,6 +655,7 @@ def monitored_run(command: list[str], events: Path, audit: AuditLogger,
     buffers = {"event": b"", "network": b""}
     cut_off = False
     turn = 0
+    last_assistant = None
     with events.open("wb") as event_file:
         while selector.get_map():
             for key, _ in selector.select():
@@ -662,6 +682,7 @@ def monitored_run(command: list[str], events: Path, audit: AuditLogger,
                             audit_pi_event(event, audit)
                             if event.get("type") == "message_end" and (event.get("message") or {}).get("role") == "assistant":
                                 turn += 1
+                                last_assistant = event["message"]
                             if length_stop(event):
                                 cut_off = True
                                 audit.write("length-stop", turn=turn, max_tokens=max_tokens,
@@ -684,7 +705,15 @@ def monitored_run(command: list[str], events: Path, audit: AuditLogger,
     process.stdout.close()
     os.close(read_fd)
     result = process.wait()
-    return EXIT_LENGTH if cut_off else result
+    if cut_off:
+        return EXIT_LENGTH
+    if result == 0 and (problem := final_reply_problem(last_assistant)):
+        audit.write("invalid-final-reply", reason=problem, turn=turn,
+                    model=str((last_assistant or {}).get("model") or "unknown")[:128],
+                    classification="infrastructure")
+        print(f"pi-task: {problem}; infrastructure failure — run incomplete", file=sys.stderr)
+        return EXIT_REPLY
+    return result
 
 
 def worker_rules(model: str, allowed: set[str], success: str, broad_scope: bool = False) -> str:
@@ -946,6 +975,7 @@ def main(argv: list[str] | None = None) -> int:
     registered_worker = None
     final_outcome = "failed"
     cut_off = False
+    invalid_reply = False
     audit = None
     attempt = 1
     pane_started = False
@@ -1067,6 +1097,7 @@ def main(argv: list[str] | None = None) -> int:
             output_cap = next(iter(run_config["providers"].values()))["models"][0]["maxTokens"]
             pi_rc = monitored_run(sb + ["--", *worker_command(repo, ["pi", *model_args])], events, audit, output_cap)
             cut_off = pi_rc == EXIT_LENGTH
+            invalid_reply = pi_rc == EXIT_REPLY
             elapsed = time.monotonic() - started
             try:
                 accounting(events, args.model, elapsed, pi_rc)
@@ -1119,7 +1150,8 @@ def main(argv: list[str] | None = None) -> int:
                             pi_status=pi_rc, success_status=test_rc,
                             elapsed_seconds=round(elapsed, 3))
             else:
-                report_failure(args.attempt, "output-cap" if cut_off else ("ambiguous" if pi_rc else "test"), audit)
+                report_failure(args.attempt, "output-cap" if cut_off else (
+                    "infrastructure-reply" if invalid_reply else ("ambiguous" if pi_rc else "test")), audit)
             return result_rc
     except PolicyError as exc:
         print(f"pi-task: {exc}", file=sys.stderr)
@@ -1138,7 +1170,8 @@ def main(argv: list[str] | None = None) -> int:
             report_pane("done" if final_outcome == "completed" else "errored",
                         "pi-task: acceptance passed" if final_outcome == "completed"
                         else ("pi-task: output cap reached; run incomplete" if cut_off
-                              else "pi-task: failed; inspect pane and audit log"))
+                              else ("pi-task: empty/missing reply or usage; infrastructure failure" if invalid_reply
+                                    else "pi-task: failed; inspect pane and audit log")))
 
 
 if __name__ == "__main__":

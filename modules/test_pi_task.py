@@ -637,6 +637,33 @@ Path("config/pids/probe").write_text("pid")
         self.assertFalse(pi_task.length_stop({"type": "message_end", "message": {
             "role": "assistant", "stopReason": "stop"}}))
 
+    def test_final_reply_validation_does_not_reject_tool_calls_or_zero_usage(self):
+        self.assertEqual("missing-final-reply", pi_task.final_reply_problem(None))
+        self.assertEqual("empty-final-reply", pi_task.final_reply_problem({"content": [
+            {"type": "thinking", "thinking": "internal"}]}))
+        self.assertEqual("missing-final-usage", pi_task.final_reply_problem({"content": "done"}))
+        for content in ("done", [{"type": "toolCall", "name": "write"}],
+                        [{"type": "text", "text": "done"}]):
+            self.assertIsNone(pi_task.final_reply_problem({"content": content,
+                "usage": {"input": 0, "output": 0}}))
+
+    def test_empty_final_reply_fails_after_previous_valid_reply(self):
+        audit = pi_task.AuditLogger("empty-test", "melious-kimi-k3", "empty-worker")
+        events = pi_task.HOME / "empty-events.jsonl"
+        messages = [
+            {"type": "message_end", "message": {"role": "assistant", "model": "kimi-k3",
+                "content": [{"type": "text", "text": "working"}], "usage": {"input": 3, "output": 2}}},
+            {"type": "message_end", "message": {"role": "assistant", "model": "kimi-k3", "content": []}},
+        ]
+        script = "import json; events=" + repr(messages) + "; [print(json.dumps(e)) for e in events]"
+        self.assertEqual(8, pi_task.monitored_run([sys.executable, "-c", script], events, audit))
+        records = [json.loads(line) for line in audit.path.read_text().splitlines()]
+        failure = next(r for r in records if r["kind"] == "invalid-final-reply")
+        self.assertEqual("empty-final-reply", failure["reason"])
+        self.assertEqual("empty-worker", failure["worker_id"])
+        self.assertEqual(2, failure["turn"])
+        self.assertEqual("infrastructure", failure["classification"])
+
     def test_live_monitor_persists_sanitized_tool_usage_and_network_metadata(self):
         audit = pi_task.AuditLogger("run-test", "local-qwen", "local-qwen")
         events = pi_task.HOME / "events.jsonl"

@@ -49,6 +49,13 @@ prints a cut-off warning and fails the run with exit7 even when Pi exits0. It sk
 acceptance and finalizes the worker as failed; TUIOS shows output-cap failure.
 Pi receives closed stdin so background launchers cannot leave it waiting for input.
 
+An otherwise successful Pi exit with no final assistant message, no final text/tool
+call (thinking alone is not a final answer), or missing final input/output usage is
+an infrastructure-reply failure: exit8, `invalid-final-reply` audit row, failed
+controller registration, errored pane, and no acceptance execution. Reported zero
+usage is valid. This does not refund or change conservative missing-billing charges;
+it prevents incomplete runs from appearing successful. Session resume is not added.
+
 Read status at any time:
 
 ```sh
