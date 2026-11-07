@@ -77,6 +77,25 @@ automatic retry.
 
 ## Reviewer workflow
 
+### Advisory Clef failure triage
+
+Reviewers may run `pi-task-control triage --summary-file /path/to/summary.txt`
+(or `--summary-file -` for stdin). Supply a concise objective, observed failure,
+relevant error excerpts and evidence; remove credentials/secrets first. Cristian
+explicitly authorized sending these reviewer-prepared summaries to trusted Melious.
+No automatic log collection or worker invocation is enabled.
+
+Clef returns advisory probabilities for infrastructure, implementation, requirements,
+or reviewer investigation. It never approves code, retries, stops or resumes workers.
+Reviewers remain responsible; probabilities are not validated accuracy estimates.
+Unavailable/full/paused/over-budget service returns skipped/unavailable advice without
+blocking worker progress. Each call has a20-second network timeout and a12000-byte
+request limit. Requests share the external pool and200-credit budget. Decision API
+responses lack actual billing cost, so the ledger conservatively charges the0.004
+reservation per attempted call (not a claim of the exact provider invoice).
+Summary contents are not persisted by the controller; only normal metadata/accounting.
+Use deterministic failure reasons such as output-cap directly; Clef is for ambiguity.
+
 Create a separate TUIOS worktree session for every worker; never use a parallel
 shell launcher or share a writable checkout:
 

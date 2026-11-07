@@ -8,6 +8,8 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
+import io
 
 
 SPEC = importlib.util.spec_from_file_location(
@@ -37,6 +39,38 @@ class ControllerTests(unittest.TestCase):
 
     def register(self, worker_id):
         return self.controller.register(worker_id, self.actor, "approved test slice")
+
+    def test_triage_is_advisory_and_budgeted_without_persisting_summary(self):
+        body = {"model": "clef", "answers": {"failure": {
+            "choice": "infrastructure", "probabilities": {"infrastructure": 1.0}}},
+            "usage": {"input_tokens": 20}}
+        with mock.patch.object(control, "read_key", return_value="test-key"):
+            result = control.triage(self.controller, "PRIVATE SUMMARY", self.actor,
+                opener=lambda *a, **kw: io.BytesIO(json.dumps(body).encode()))
+        self.assertTrue(result["advisory"])
+        self.assertTrue(result["review_required"])
+        self.assertEqual("infrastructure", result["category"])
+        self.assertEqual("0.004", self.controller.status()["spent"])
+        self.assertNotIn("PRIVATE SUMMARY", self.controller.audit_path.read_text())
+        self.assertNotIn("PRIVATE SUMMARY", self.controller.state_path.read_text())
+
+    def test_triage_skips_without_network_when_budget_or_capacity_unavailable(self):
+        opener = mock.Mock(side_effect=AssertionError("must not call provider"))
+        self.controller.set_cap(0, self.actor, "test")
+        self.assertEqual("skipped", control.triage(self.controller, "failure", self.actor, opener)["status"])
+        self.controller.set_cap(200, self.actor, "test")
+        self.controller.set_worker_limit(0, self.actor, "test")
+        self.assertEqual("skipped", control.triage(self.controller, "failure", self.actor, opener)["status"])
+        opener.assert_not_called()
+
+    def test_triage_provider_failure_does_not_change_existing_workers(self):
+        before = self.register("existing")
+        with mock.patch.object(control, "read_key", return_value="test-key"):
+            result = control.triage(self.controller, "failure", self.actor,
+                                   opener=mock.Mock(side_effect=TimeoutError()))
+        self.assertEqual("unavailable", result["status"])
+        self.assertEqual(before, self.controller.state["workers"]["existing"])
+        self.assertEqual("0", self.controller.status()["reserved"])
 
     def wait_for(self, predicate, timeout=2):
         deadline = time.monotonic() + timeout
