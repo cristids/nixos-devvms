@@ -89,7 +89,8 @@ let
           id = "strata/qwen3.8-flash";
           reasoning = true;
           contextWindow = 262144;
-          maxTokens = 32768;
+          # Provider maximum unavailable: explicitly configured fallback cap.
+          maxTokens = 65536;
           cost = { input = 0; output = 0; cacheRead = 0; cacheWrite = 0; };
           samplingParams = {
             temperature = 1.0;
@@ -111,7 +112,8 @@ let
           id = model.id;
           reasoning = true;
           contextWindow = model.contextWindow;
-          maxTokens = 32768;
+          # Melious catalog max_output_tokens is null (2026-11-07).
+          maxTokens = 65536;
           # Verified bake-off mapping, credits per 1M tokens. The persistent
           # control service reserves and settles every worker-scoped request.
           cost = { inherit (model) input output cacheRead; cacheWrite = 0; };

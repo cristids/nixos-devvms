@@ -618,6 +618,25 @@ Path("config/pids/probe").write_text("pid")
         self.assertEqual("tuios-socket", unix["category"])
         self.assertNotIn("sun_path", json.dumps(unix))
 
+    def test_length_stop_is_failed_even_when_pi_exits_zero_and_stdin_is_closed(self):
+        audit = pi_task.AuditLogger("cutoff-test", "melious-dsf", "cutoff-worker")
+        events = pi_task.HOME / "cutoff-events.jsonl"
+        script = (
+            "import sys,json;assert sys.stdin.read() == '';"
+            "print(json.dumps({'type':'message_end','message':{'role':'assistant',"
+            "'model':'deepseek-v4.1-flash-1017','stopReason':'length'}}))"
+        )
+        self.assertEqual(7, pi_task.monitored_run([sys.executable, "-c", script], events, audit, 16))
+        records = [json.loads(line) for line in audit.path.read_text().splitlines()]
+        cutoff = next(row for row in records if row["kind"] == "length-stop")
+        self.assertEqual("cutoff-worker", cutoff["worker_id"])
+        self.assertEqual(1, cutoff["turn"])
+        self.assertEqual(16, cutoff["max_tokens"])
+        self.assertEqual("deepseek-v4.1-flash-1017", cutoff["model"])
+        self.assertTrue(pi_task.length_stop({"choices": [{"finish_reason": "length"}]}))
+        self.assertFalse(pi_task.length_stop({"type": "message_end", "message": {
+            "role": "assistant", "stopReason": "stop"}}))
+
     def test_live_monitor_persists_sanitized_tool_usage_and_network_metadata(self):
         audit = pi_task.AuditLogger("run-test", "local-qwen", "local-qwen")
         events = pi_task.HOME / "events.jsonl"

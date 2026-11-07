@@ -25,6 +25,7 @@ from urllib.request import Request, urlopen
 
 
 EXIT_POLICY = 6
+EXIT_LENGTH = 7
 HOME = Path("/home/cristian")
 MODEL_SPECS = {
     "local-qwen": {
@@ -603,14 +604,28 @@ def audit_pi_event(event: dict, audit: AuditLogger) -> None:
         )
 
 
-def monitored_run(command: list[str], events: Path, audit: AuditLogger) -> int:
+def length_stop(event: dict) -> bool:
+    """Recognize terminal Pi assistant events and raw provider finish reasons."""
+    message = event.get("message") or {}
+    return (
+        event.get("type") == "message_end"
+        and message.get("role") == "assistant"
+        and message.get("stopReason") == "length"
+    ) or event.get("finish_reason") == "length" or any(
+        choice.get("finish_reason") == "length" for choice in event.get("choices", [])
+        if isinstance(choice, dict))
+
+
+def monitored_run(command: list[str], events: Path, audit: AuditLogger,
+                  max_tokens: int = 65536) -> int:
     """Run the shared worker pipeline with live tool and connect telemetry."""
     read_fd, write_fd = os.pipe()
     traced = [
         "strace", "-f", "-qq", "-e", "trace=connect", "-s", "0",
         "-o", f"/proc/self/fd/{write_fd}", "--", *command,
     ]
-    process = subprocess.Popen(traced, stdout=subprocess.PIPE, pass_fds=(write_fd,))
+    process = subprocess.Popen(traced, stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, pass_fds=(write_fd,))
     os.close(write_fd)
     if process.stdout is None:
         os.close(read_fd)
@@ -619,6 +634,8 @@ def monitored_run(command: list[str], events: Path, audit: AuditLogger) -> int:
     selector.register(process.stdout, selectors.EVENT_READ, "event")
     selector.register(read_fd, selectors.EVENT_READ, "network")
     buffers = {"event": b"", "network": b""}
+    cut_off = False
+    turn = 0
     with events.open("wb") as event_file:
         while selector.get_map():
             for key, _ in selector.select():
@@ -641,7 +658,17 @@ def monitored_run(command: list[str], events: Path, audit: AuditLogger) -> int:
                         event_file.write(raw + b"\n")
                         event_file.flush()
                         try:
-                            audit_pi_event(json.loads(raw), audit)
+                            event = json.loads(raw)
+                            audit_pi_event(event, audit)
+                            if event.get("type") == "message_end" and (event.get("message") or {}).get("role") == "assistant":
+                                turn += 1
+                            if length_stop(event):
+                                cut_off = True
+                                audit.write("length-stop", turn=turn, max_tokens=max_tokens,
+                                            model=str((event.get("message") or {}).get("model")
+                                                      or event.get("model") or "unknown")[:128])
+                                print(f"pi-task: model response cut off at output cap (maxTokens={max_tokens}) — run incomplete",
+                                      file=sys.stderr)
                         except (ValueError, TypeError):
                             continue
                     else:
@@ -656,7 +683,8 @@ def monitored_run(command: list[str], events: Path, audit: AuditLogger) -> int:
     selector.close()
     process.stdout.close()
     os.close(read_fd)
-    return process.wait()
+    result = process.wait()
+    return EXIT_LENGTH if cut_off else result
 
 
 def worker_rules(model: str, allowed: set[str], success: str, broad_scope: bool = False) -> str:
@@ -917,6 +945,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     registered_worker = None
     final_outcome = "failed"
+    cut_off = False
     audit = None
     attempt = 1
     pane_started = False
@@ -1034,7 +1063,10 @@ def main(argv: list[str] | None = None) -> int:
                           "--model", spec["pi_model"], "--append-system-prompt",
                           rules.read_text(), "--", prompt]
             report_pane("working", "pi-task: implementing and testing")
-            pi_rc = monitored_run(sb + ["--", *worker_command(repo, ["pi", *model_args])], events, audit)
+            run_config = json.loads(models.read_text())
+            output_cap = next(iter(run_config["providers"].values()))["models"][0]["maxTokens"]
+            pi_rc = monitored_run(sb + ["--", *worker_command(repo, ["pi", *model_args])], events, audit, output_cap)
+            cut_off = pi_rc == EXIT_LENGTH
             elapsed = time.monotonic() - started
             try:
                 accounting(events, args.model, elapsed, pi_rc)
@@ -1087,7 +1119,7 @@ def main(argv: list[str] | None = None) -> int:
                             pi_status=pi_rc, success_status=test_rc,
                             elapsed_seconds=round(elapsed, 3))
             else:
-                report_failure(args.attempt, "ambiguous" if pi_rc else "test", audit)
+                report_failure(args.attempt, "output-cap" if cut_off else ("ambiguous" if pi_rc else "test"), audit)
             return result_rc
     except PolicyError as exc:
         print(f"pi-task: {exc}", file=sys.stderr)
@@ -1105,7 +1137,8 @@ def main(argv: list[str] | None = None) -> int:
         if pane_started:
             report_pane("done" if final_outcome == "completed" else "errored",
                         "pi-task: acceptance passed" if final_outcome == "completed"
-                        else "pi-task: failed; inspect pane and audit log")
+                        else ("pi-task: output cap reached; run incomplete" if cut_off
+                              else "pi-task: failed; inspect pane and audit log"))
 
 
 if __name__ == "__main__":

@@ -37,10 +37,17 @@ conservatively after restart. Audit records contain control/request metadata,
 actor/session/pane when available, reason, and old/new state—never prompts,
 source, responses, credentials, or secrets.
 
-Model-specific reservations use declared context, the configured 32768 output
+Model-specific reservations use declared context, the configured 65536 output
 token ceiling, and catalog token prices (2026-11-07). These are estimates, not a
 guaranteed provider-price ceiling: routing prices may differ. Actual billing is
 settled even if it exceeds the reservation. Pi display prices are estimates too.
+
+Output cap: 65536 is the configured fallback, not a verified provider maximum:
+Melious returned null maximum output values on 2026-11-07. Context windows stay
+unchanged. A terminal `length` response logs `length-stop` with model/worker/turn,
+prints a cut-off warning and fails the run with exit7 even when Pi exits0. It skips
+acceptance and finalizes the worker as failed; TUIOS shows output-cap failure.
+Pi receives closed stdin so background launchers cannot leave it waiting for input.
 
 Read status at any time:
 

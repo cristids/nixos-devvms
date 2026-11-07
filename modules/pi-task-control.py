@@ -38,8 +38,9 @@ PROXY_SOCKET = "/run/pi-task-control/proxy.sock"
 STATE_DIR = "/var/lib/pi-task-control"
 INITIAL_CAP = Decimal("200")
 INITIAL_LIMIT = 5
-# Worst case at the declared 1M context / 32768 output and verified prices.
-REQUEST_RESERVATION = Decimal("0.339322")
+MAX_OUTPUT_TOKENS = 65536
+# Catalog-price estimate at the declared context and configured output cap.
+REQUEST_RESERVATION = Decimal("0.3786432")
 TZ = ZoneInfo("Europe/Bucharest")
 WORKER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 MAX_BODY = 16 * 1024 * 1024
@@ -385,7 +386,7 @@ class Controller:
                 # Preserve the original DSF reservation for existing callers/state.
                 credits = REQUEST_RESERVATION if model == MODEL else (
                     Decimal(str(spec["input"])) * spec["contextWindow"]
-                    + Decimal(str(spec["output"])) * 32768) / Decimal(1000000)
+                    + Decimal(str(spec["output"])) * MAX_OUTPUT_TOKENS) / Decimal(1000000)
             while True:
                 self._rollover_locked()
                 worker = self._worker_locked(worker_id)
@@ -670,9 +671,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict) or payload.get("model") != model:
             self.json_error(400, f"model refused: expected {model}")
             return
-        max_tokens = payload.get("max_tokens", 32768)
-        if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or not 1 <= max_tokens <= 32768:
-            self.json_error(400, "max_tokens must be between 1 and 32768")
+        max_tokens = payload.get("max_tokens", MAX_OUTPUT_TOKENS)
+        if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or not 1 <= max_tokens <= MAX_OUTPUT_TOKENS:
+            self.json_error(400, f"max_tokens must be between 1 and {MAX_OUTPUT_TOKENS}")
             return
         payload["max_tokens"] = max_tokens
         body = json.dumps(payload).encode()
