@@ -944,9 +944,59 @@ def report_failure(attempt: int, classification: str, audit: AuditLogger) -> Non
           f"takeover={'required' if takeover else 'not-yet'} ──", file=sys.stderr)
 
 
+def run_directory(run_id: str) -> Path:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}", run_id):
+        raise PolicyError("invalid resume run ID")
+    root = Path(os.environ.get("XDG_STATE_HOME", HOME / ".local/state")) / "pi-task/runs"
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(root, 0o700)
+    path = root / run_id
+    if path.is_symlink():
+        raise PolicyError("run directory cannot be a symlink")
+    return path
+
+
+def save_run(path: Path, record: dict) -> None:
+    temp = path / "record.tmp"
+    with temp.open("w") as handle:
+        os.chmod(temp, 0o600)
+        json.dump(record, handle)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temp, path / "record.json")
+
+
+def load_run(path: Path) -> dict:
+    try:
+        record = json.loads((path / "record.json").read_text())
+    except (OSError, ValueError) as exc:
+        raise PolicyError("saved run unavailable; only new session-enabled runs can resume") from exc
+    if record.get("version") != 1 or record.get("status") not in ("interrupted", "running"):
+        raise PolicyError("run is not resumable (completed, policy/test failure, or not started)")
+    session = path / "session/session.jsonl"
+    if session.is_symlink() or not session.is_file() or session.stat().st_size == 0:
+        raise PolicyError("Pi did not save a conversation; cannot resume this run")
+    return record
+
+
+def validate_resume(record: dict, repo: Path, allowed: set[str], broad: bool,
+                    other_apps: dict, app_links: dict, acceptance: list[Path]) -> None:
+    current = snapshot(repo)
+    if record.get("checkpoint") is not None and current != record["checkpoint"]:
+        raise PolicyError("checkout changed since interruption; review before starting a new run")
+    original = record["before"]
+    scope = set(original["files"]) | set(current["files"]) if broad else allowed
+    if policy_violations(original, current, scope):
+        raise PolicyError("original run scope or Git state changed")
+    if {str(p): s for p, s in other_apps.items()} != record["other_apps"] or app_links != record["app_links"]:
+        raise PolicyError("other app source or W app mapping changed since original run")
+    if {str(p): digest_path(p) for p in acceptance} != record["acceptance"]:
+        raise PolicyError("reviewer acceptance files changed since original run")
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run one bounded Pi implementation slice in the production worker pool")
+        description="Run one bounded Pi packet. Resume an interrupted saved run with: pi-task --resume RUN_ID")
     parser.add_argument("--cwd", default=os.getcwd())
     parser.add_argument("--model", choices=sorted(MODEL_SPECS), default="local-qwen",
                         help="allowlisted production model (default: local-qwen)")
@@ -979,8 +1029,20 @@ def main(argv: list[str] | None = None) -> int:
     audit = None
     attempt = 1
     pane_started = False
+    saved = None
+    run_path = None
+    resume_eligible = False
+    session_started = False
     try:
-        args = parse_args(argv)
+        resuming = len(argv) == 2 and argv[0] == "--resume"
+        if "--resume" in argv and not resuming:
+            raise PolicyError("use only pi-task --resume RUN_ID; original task settings are preserved")
+        if resuming:
+            run_path = run_directory(argv[1])
+            saved = load_run(run_path)
+            args = argparse.Namespace(**saved["args"])
+        else:
+            args = parse_args(argv)
         attempt = args.attempt
         repo = validate_repo(args.cwd)
         layout = git_layout(repo)
@@ -1002,11 +1064,29 @@ def main(argv: list[str] | None = None) -> int:
         if args.erpnext_bench and args.erpnext_bench not in W_SLOTS:
             raise PolicyError("ERPNext worker writes must use W1-W6, not shared test/UAT benches")
         ensure_scoped(argv)
+        if resuming:
+            run_lock = acquire_exclusive_lock(run_path, "resume")
+            saved = load_run(run_path)
         pane_started = True
         report_pane("working", "pi-task: admission and environment checks")
         runtime = Path(os.environ["XDG_RUNTIME_DIR"])
         worker_identity = args.worker_id or "local-qwen"
-        run_id = f"{worker_identity}-a{args.attempt}-{int(time.time())}-{os.getpid()}"
+        run_id = argv[1] if resuming else f"{worker_identity}-a{args.attempt}-{int(time.time())}-{os.getpid()}"
+        if not resuming:
+            run_path = run_directory(run_id)
+            run_path.mkdir(mode=0o700)
+            run_lock = acquire_exclusive_lock(run_path, "resume")
+        print(f"── pi-task run ID: {run_id}; resume: pi-task --resume {run_id} ──")
+        if resuming and args.worker_id:
+            groups = control_call("status")["workers"]
+            if saved.get("registration") in groups.get("stopped", []):
+                raise PolicyError("worker was explicitly stopped; resume refused")
+            if any(saved.get("registration") in groups.get(k, []) for k in ("active", "in-flight", "limit-waiting", "manual-paused", "budget-waiting")):
+                raise PolicyError("previous registration is still live; reviewer must reconcile it before resume")
+            saved["generation"] += 1
+            save_run(run_path, saved)
+            suffix = hashlib.sha256(run_id.encode()).hexdigest()[:10]
+            args.worker_id = f"{args.worker_id[:90]}-r{saved['generation']}-{suffix}"
         audit = AuditLogger(run_id, args.model, worker_identity)
         audit.write("run-start", model=spec["event_model"], attempt=args.attempt,
                     allowed_file_count=len(allowed), erpnext_bench=bool(args.erpnext_bench))
@@ -1063,6 +1143,20 @@ def main(argv: list[str] | None = None) -> int:
         before = snapshot(repo)
         other_apps = w_app_snapshots(slot, repo) if slot else {}
         app_links = w_app_links(slot) if slot else {}
+        protected = acceptance_files(repo, slot, args.acceptance_file, allowed)
+        if resuming:
+            validate_resume(saved, repo, allowed, args.allow_app, other_apps, app_links, protected)
+            before = saved["before"]
+        else:
+            saved_args = vars(args).copy()
+            saved_args["cwd"] = str(repo)
+            saved = {"version": 1, "args": saved_args, "generation": 0,
+                     "before": before, "other_apps": {str(p): s for p, s in other_apps.items()},
+                     "app_links": app_links, "acceptance": {str(p): digest_path(p) for p in protected}}
+        saved.update(status="preparing", registration=registered_worker)
+        save_run(run_path, saved)
+        session_dir = run_path / "session"
+        session_dir.mkdir(mode=0o700, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="pi-task.", dir=runtime) as tmp:
             stage = Path(tmp)
             frozen = freeze_acceptance(stage, acceptance_files(
@@ -1072,6 +1166,7 @@ def main(argv: list[str] | None = None) -> int:
                                       args.model, args.worker_id)
             sb = sandbox_args(repo, layout, models, inference_mcp,
                               inference_sockets, frozen)
+            sb += ["--bind", str(session_dir), "/pi-session"]
             rules = stage / "rules.md"
             task_rules = worker_rules(args.model, allowed, args.success, args.allow_app)
             rules.write_text(task_rules + (
@@ -1087,12 +1182,15 @@ def main(argv: list[str] | None = None) -> int:
                 "own W site. Your app import must point to this packet checkout. "
                 "Never target another environment or reset your slot.\n" if slot else ""))
             events = stage / "events.jsonl"
-            prompt = f"Complete this OpenSpec work packet autonomously:\n\n{args.brief}"
+            prompt = ("Resume the same work packet after an infrastructure interruption. Inspect current files and test results before repeating any action; do not assume an interrupted tool had no effects. Continue the remaining steps, test and repair.\n\n" if resuming else "Complete this OpenSpec work packet autonomously:\n\n") + args.brief
             started = time.monotonic()
-            model_args = ["-p", "--mode", "json", "--approve", "--no-session",
+            model_args = ["-p", "--mode", "json", "--approve", "--session", "/pi-session/session.jsonl",
                           "--model", spec["pi_model"], "--append-system-prompt",
                           rules.read_text(), "--", prompt]
             report_pane("working", "pi-task: implementing and testing")
+            saved.update(status="running", checkpoint=None)
+            save_run(run_path, saved)
+            session_started = True
             run_config = json.loads(models.read_text())
             output_cap = next(iter(run_config["providers"].values()))["models"][0]["maxTokens"]
             pi_rc = monitored_run(sb + ["--", *worker_command(repo, ["pi", *model_args])], events, audit, output_cap)
@@ -1121,6 +1219,7 @@ def main(argv: list[str] | None = None) -> int:
                 report_failure(args.attempt, "scope", audit)
                 report(repo, pi_rc, None)
                 return EXIT_POLICY
+            resume_eligible = pi_rc != 0
             test_rc: int | None = None
             if pi_rc == 0:
                 report_pane("working", "pi-task: independent acceptance checks")
@@ -1159,6 +1258,13 @@ def main(argv: list[str] | None = None) -> int:
             report_failure(attempt, "wrapper-infrastructure", audit)
         return 2
     finally:
+        if session_started and saved is not None:
+            try:
+                saved.update(status="completed" if final_outcome == "completed" else (
+                    "interrupted" if resume_eligible else "failed"), checkpoint=snapshot(repo))
+                save_run(run_path, saved)
+            except (OSError, PolicyError) as exc:
+                print(f"pi-task: cannot save resume checkpoint: {exc}", file=sys.stderr)
         if registered_worker:
             try:
                 control_call("_finish", registered_worker, final_outcome, "--reason",

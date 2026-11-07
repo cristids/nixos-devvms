@@ -54,7 +54,27 @@ call (thinking alone is not a final answer), or missing final input/output usage
 an infrastructure-reply failure: exit8, `invalid-final-reply` audit row, failed
 controller registration, errored pane, and no acceptance execution. Reported zero
 usage is valid. This does not refund or change conservative missing-billing charges;
-it prevents incomplete runs from appearing successful. Session resume is not added.
+it prevents incomplete runs from appearing successful.
+
+### Resume an interrupted conversation
+
+New runs print a stable run ID. Use `pi-task --resume RUN_ID` without other options
+inside a TUIOS pane. It restores the original packet/model/attempt/bench/scope and
+the same Pi conversation, with a new billable controller registration linked by the
+run ID. This is not a new attempt and does not reset spending or bypass live controls.
+Original Git/source scope, other apps, app links and acceptance hashes are rechecked;
+post-interruption checkout changes refuse resume. The model must inspect current
+files/tests before repeating actions: conversation resume is not transaction rollback.
+
+Private records live in `~/.local/state/pi-task/runs/RUN_ID` (0700 directory,0600
+manifest). Only that run's session directory is mounted at `/pi-session`; other runs
+and the host home remain hidden. These retained sessions contain task/tool content,
+unlike metadata-only audit logs. No automatic deletion is performed.
+Completed runs, acceptance/policy failures and explicitly stopped workers are refused.
+Nonzero Pi exits (including truncation/empty replies) can resume after scope validation.
+After a hard kill, a stale live controller registration must first be reconciled by
+the reviewer; do not finish a registration while its worker is still running.
+Historical `--no-session` runs cannot be resumed. Nothing auto-retries.
 
 Read status at any time:
 

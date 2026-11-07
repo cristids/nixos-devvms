@@ -57,6 +57,40 @@ class PiTaskPolicyTests(unittest.TestCase):
         (self.repo / "allowed.txt").write_text("new\n")
         self.assertEqual([], pi_task.policy_violations(before, pi_task.snapshot(self.repo), {"allowed.txt"}))
 
+    def test_resume_record_is_private_and_terminal_runs_are_refused(self):
+        path = pi_task.run_directory("saved-run")
+        path.mkdir(mode=0o700)
+        (path / "session").mkdir()
+        (path / "session/session.jsonl").write_text('{"type":"session"}\n')
+        record = {"version": 1, "status": "interrupted", "args": {"attempt": 2}}
+        pi_task.save_run(path, record)
+        self.assertEqual(record, pi_task.load_run(path))
+        self.assertEqual(0o600, (path / "record.json").stat().st_mode & 0o777)
+        for status in ("completed", "failed", "preparing"):
+            record["status"] = status
+            pi_task.save_run(path, record)
+            with self.assertRaises(pi_task.PolicyError):
+                pi_task.load_run(path)
+        with self.assertRaises(pi_task.PolicyError):
+            pi_task.run_directory("../escape")
+
+    def test_resume_preserves_original_scope_and_acceptance(self):
+        before = pi_task.snapshot(self.repo)
+        gate = self.repo / "other.txt"
+        record = {"before": before, "other_apps": {}, "app_links": {},
+                  "acceptance": {str(gate): pi_task.digest_path(gate)}, "checkpoint": None}
+        (self.repo / "allowed.txt").write_text("partial work")
+        pi_task.validate_resume(record, self.repo, {"allowed.txt"}, False, {}, {}, [gate])
+        record["checkpoint"] = pi_task.snapshot(self.repo)
+        pi_task.validate_resume(record, self.repo, {"allowed.txt"}, False, {}, {}, [gate])
+        (self.repo / "allowed.txt").write_text("external change after interruption")
+        with self.assertRaisesRegex(pi_task.PolicyError, "checkout changed"):
+            pi_task.validate_resume(record, self.repo, {"allowed.txt"}, False, {}, {}, [gate])
+        record["checkpoint"] = None
+        gate.write_text("changed acceptance")
+        with self.assertRaises(pi_task.PolicyError):
+            pi_task.validate_resume(record, self.repo, {"allowed.txt"}, True, {}, {}, [gate])
+
     def test_worker_scope_disables_swap(self):
         runtime = pi_task.HOME / "runtime"
         self.bind_socket(runtime / "bus")
