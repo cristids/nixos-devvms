@@ -302,6 +302,9 @@ async def handle_proxy(request: web.Request) -> web.StreamResponse:
                 rec["sampling_defaults"] = added
             stream = bool(j.get("stream"))
             rec["model"] = j.get("model")
+            # Keep local model identity and recording intact; never redirect Qwen.
+            if up == "homelab" and j.get("model") == "mellum2.1-thinking":
+                url = "http://127.0.0.1:8997/" + tail
             rec["max_tokens"] = j.get("max_tokens", j.get("max_completion_tokens"))
             rec["sampling"] = {k: j[k] for k in ("temperature", "top_p", "top_k", "min_p",
                                "presence_penalty", "reasoning_effort") if k in j}

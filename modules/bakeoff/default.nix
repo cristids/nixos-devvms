@@ -59,6 +59,9 @@ let
     { id = "qwen3.8-max"; ctx = 256000; cost = [ 1.80 6.80 ]; sampling = { }; }
   ];
   homelab = [
+    # Separate local test endpoint, reached through a loopback-only SSH tunnel.
+    { id = "mellum2.1-thinking"; ctx = 131072; cost = [ 0 0 ];
+      sampling = { temperature = 1.0; top_p = 0.95; top_k = 20; min_p = 0.0; }; }
     # Local Qwen 3.8 Flash-Next (strata, CONTEXT=256k, PARALLEL=1). Sampling: the Qwen3.8
     # family thinking preset (official Qwen3.8-27B card); min_p explicit (llama.cpp default 0.05).
     { id = "strata/qwen3.8-flash"; ctx = 262144; cost = [ 0 0 ];
