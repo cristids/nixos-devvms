@@ -37,6 +37,13 @@
     # Bumped in all three repos at once by lockstep-update-auto (cdssrv02).
     tuios.url = "github:Gaurav-Gosain/tuios/v0.12.1";
 
+    # pi-admin (cristids/pi-admin, PRIVATE): pi + sysadmin gate, one project
+    # deployed on devpro and cdssrv02. This repo is built on cdssrv02, which
+    # fetches it with a read-only deploy key via the `github-pi-admin` ssh
+    # alias (nixos_llm_srv modules/ai-services/pi-admin). Keep nixos_llm_srv on
+    # the same rev.
+    pi-admin.url = "git+ssh://git@github-pi-admin/cristids/pi-admin?ref=main";
+
     # Emacs 31 for the VMs, same two-piece recipe as nixos-laptops: emacs-overlay
     # gives `emacs-unstable-nox', and the emacs-31 release branch is swapped in as
     # its src (overlays/emacs-31-branch.nix) because emacs-overlay's unstable
@@ -67,7 +74,7 @@
     emacs-tramp-rpc.url = "github:ArthurHeymans/emacs-tramp-rpc/v0.16.0";
   };
 
-  outputs = { self, nixpkgs, omp, herdr, tuios, emacs-overlay, emacs-31, emacs-tramp-rpc }:
+  outputs = { self, nixpkgs, omp, herdr, tuios, emacs-overlay, emacs-31, emacs-tramp-rpc, pi-admin }:
     let
       system = "x86_64-linux";
       mkVM = host: nixpkgs.lib.nixosSystem {
@@ -88,6 +95,7 @@
               # nixpkgs because they stopped building (auto-pins.json).
               (import ./overlays/auto-pins.nix)
             ]; }
+          pi-admin.nixosModules.default # off unless services.pi-admin.enable (devpro)
           ./hosts/common
           (./hosts + "/${host}")
         ];
