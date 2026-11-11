@@ -10,6 +10,9 @@
     ../../modules/erpnext-uat.nix
     # Read-only Proton mail (himalaya → host read-only IMAP proxy). devpro only.
     ../../modules/proton-mail.nix
+    # Interactive pi-admin (Melious DeepSeek + gate) for ERPNext/dev work in any
+    # folder, outside the pi-task worker pool (2026-11-11).
+    ../../modules/pi-admin
   ];
 
   networking.hostName = "devpro";
