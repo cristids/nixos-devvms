@@ -469,6 +469,22 @@
         "type": "github"
       }
     },
+    "pi-admin": {
+      "locked": {
+        "lastModified": 1794412825,
+        "narHash": "sha256-aBPljAx+QWc7r1/Tv33MvWbPDRtAbcL6EYt9dlihlAE=",
+        "ref": "main",
+        "rev": "7e630c7b83bbf2fc742afc39d52b0be4fba792e0",
+        "revCount": 2,
+        "type": "git",
+        "url": "ssh://git@github-pi-admin/cristids/pi-admin"
+      },
+      "original": {
+        "ref": "main",
+        "type": "git",
+        "url": "ssh://git@github-pi-admin/cristids/pi-admin"
+      }
+    },
     "root": {
       "inputs": {
         "emacs-31": "emacs-31",
@@ -477,6 +493,7 @@
         "herdr": "herdr",
         "nixpkgs": "nixpkgs_3",
         "omp": "omp",
+        "pi-admin": "pi-admin",
         "tuios": "tuios"
       }
     },
