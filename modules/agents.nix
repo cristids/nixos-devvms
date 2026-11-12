@@ -37,13 +37,13 @@ let
   # To bump: change `codexVersion`, then update the hash with:
   #   nix store prefetch-file --json \
   #     "https://registry.npmjs.org/@openai/codex/-/codex-<VER>-linux-x64.tgz"
-  codexVersion = "0.167.0";
+  codexVersion = "0.167.2";
   codexPinned = pkgs.stdenvNoCC.mkDerivation {
     pname = "codex";
     version = codexVersion;
     src = pkgs.fetchurl {
       url = "https://registry.npmjs.org/@openai/codex/-/codex-${codexVersion}-linux-x64.tgz";
-      hash = "sha256-Lcmqhxq7UTw1OdINAl9wH68ZdMRu6Qa9o6Hh9QJtRDQ=";
+      hash = "sha256-Y3vxfnowgrYvjL0R7Rk2YBAUr03trHznj442FMbkrfY=";
     };
     sourceRoot = "package";            # tarball top-level dir
     dontConfigure = true;
