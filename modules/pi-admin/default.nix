@@ -19,6 +19,10 @@ let
 in
 {
   services.pi-admin = {
+    # Weekly tune on devpro's reviewed tasks (ERPNext); devpro has no GitHub credential, so a real
+    # improvement is written as a proposal that cdssrv02's weekly job publishes (`tune fetch devpro`).
+    # Before cdssrv02's Sunday 23:30 run.
+    tune.weekly = { enable = true; onCalendar = "Sun 20:00"; };
     enable = true;
     configRepo = "/home/cristian/development/nixos-devvms";
     package = pkgs.callPackage ../../pkgs/pi-coding-agent { };
