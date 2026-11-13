@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, piAdminLean, ... }:
 
 # Production Pi worker backed by the local Qwen 3.8 Flash endpoint. This is
 # deliberately separate from devhobby's recorded bake-off Pi configuration:
@@ -16,6 +16,13 @@ let
     bins = { mcp-searxng = "mcp-searxng/dist/cli.js"; };
     meta.description = "SearXNG MCP server for trusted pi-task workers";
   };
+  # lean-coding skill: one file, from the cristids/pi-admin flake input (also used by pi-admin).
+  leanSkills = pkgs.linkFarm "pi-task-lean-coding-skill" [ { name = "lean-coding"; path = piAdminLean.skillDir; } ];
+  leanRulesFile = if cfg.leanCodingDefault then "${piAdminLean.skillFile}" else "";
+  costReport = pkgs.runCommand "pi-task-cost-report" { } ''
+    install -Dm755 ${./pi-task-cost-report.py} $out/bin/pi-task-cost-report
+    patchShebangs $out/bin
+  '';
   productionBenches = [ "test" "test1" "test2" "test3" "test4" "test5" "test6" "test7" ];
   browserPython = pkgs.python3.withPackages (p: [ p.playwright p.requests ]);
   piBrowserPython = pkgs.writeShellScriptBin "pi-browser-python" ''
@@ -29,7 +36,8 @@ let
     cp ${./pi-task.py} pi-task.py
     cp ${./pi-tested-models.json} pi-tested-models.json
     cp ${./test_pi_task.py} test_pi_task.py
-    ${pkgs.python3}/bin/python3 -m unittest -v test_pi_task.py
+    substituteInPlace pi-task.py --replace-fail '"@LEAN_RULES@"' '"${leanRulesFile}"'
+    PI_TASK_EXPECT_LEAN=${if cfg.leanCodingDefault then "1" else "0"} ${pkgs.python3}/bin/python3 -m unittest -v test_pi_task.py
     install -Dm755 pi-task.py $out/libexec/pi-task.py
     install -Dm644 pi-tested-models.json $out/libexec/pi-tested-models.json
     makeWrapper ${pkgs.python3}/bin/python3 $out/bin/pi-task \
@@ -135,6 +143,8 @@ let
   settings = pkgs.writeText "pi-local-qwen-settings.json" (builtins.toJSON {
     enableInstallTelemetry = false;
     enableAnalytics = false;
+    # available to every worker; also on by default in the worker rules when leanCodingDefault
+    skills = [ "${leanSkills}" ];
     defaultProvider = "homelab";
     defaultModel = "strata/qwen3.8-flash";
   });
@@ -172,10 +182,15 @@ in
   options.piDevAgent = {
     enable = lib.mkEnableOption "Pi backed by local Qwen 3.8 Flash";
     erpnext.enable = lib.mkEnableOption "the ERPNext MCP in Pi";
+    leanCodingDefault = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Append the lean-coding skill (cristids/pi-admin) to every pi-task worker's rules.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = [ piPkg piTask piTaskControl webMcpPkg ]
+    environment.systemPackages = [ piPkg piTask piTaskControl webMcpPkg costReport ]
       ++ lib.optionals cfg.erpnext.enable [ pkgs.chromium pkgs.playwright-test piBrowserPython ];
     environment.etc."pi-task-browser-env" = lib.mkIf cfg.erpnext.enable {
       text = ''

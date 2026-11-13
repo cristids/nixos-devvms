@@ -28,6 +28,9 @@ EXIT_POLICY = 6
 EXIT_LENGTH = 7
 EXIT_REPLY = 8
 HOME = Path("/home/cristian")
+# Lean-coding skill (cristids/pi-admin skills/lean-coding/SKILL.md via the flake input), set at
+# build time when piDevAgent.leanCodingDefault is on; "" or the placeholder = off.
+LEAN_RULES = "@LEAN_RULES@"
 MODEL_SPECS = {
     "local-qwen": {
         "pi_model": "homelab/strata/qwen3.8-flash",
@@ -716,6 +719,19 @@ def monitored_run(command: list[str], events: Path, audit: AuditLogger,
     return result
 
 
+def lean_rules(path: str | None = None) -> str:
+    """The lean-coding skill body (without frontmatter), on by default for workers; "" when off."""
+    p = LEAN_RULES if path is None else path
+    if not p or p.startswith("@"):
+        return ""
+    try:
+        text = Path(p).read_text()
+    except OSError:
+        return ""
+    body = text.split("\n---\n", 1)[1] if text.startswith("---\n") and "\n---\n" in text else text
+    return "\n\n## Lean coding (on by default for pi-task workers; skill lean-coding)\n" + body.strip() + "\n"
+
+
 def worker_rules(model: str, allowed: set[str], success: str, broad_scope: bool = False) -> str:
     allowed_text = "\n".join(f"- {name}" for name in sorted(allowed))
     scope = ("You may modify and create source files within this selected disposable app "
@@ -1168,7 +1184,7 @@ def main(argv: list[str] | None = None) -> int:
                               inference_sockets, frozen)
             sb += ["--bind", str(session_dir), "/pi-session"]
             rules = stage / "rules.md"
-            task_rules = worker_rules(args.model, allowed, args.success, args.allow_app)
+            task_rules = worker_rules(args.model, allowed, args.success, args.allow_app) + lean_rules()
             rules.write_text(task_rules + (
                 f"\nYour complete private development bench is {slot}; site {slot.name}.localhost. "
                 "Its Python, Node, bench toolchain and linked app code are active in every tool. "

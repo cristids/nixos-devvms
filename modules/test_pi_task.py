@@ -735,5 +735,25 @@ Path("config/pids/probe").write_text("pid")
         self.assertIn("strata/qwen3.8-flash", persisted)
 
 
+class LeanRules(unittest.TestCase):
+    def test_lean_rules_on_and_off(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "SKILL.md"
+            f.write_text("---\nname: lean-coding\ndescription: Use when coding. Does not apply to analysis.\n---\n\n# Lean coding\n- Read everything you need in one batch, then act.\n")
+            out = pi_task.lean_rules(str(f))
+            self.assertIn("## Lean coding (on by default for pi-task workers", out)
+            self.assertIn("Read everything you need in one batch", out)
+            self.assertNotIn("name: lean-coding", out)
+        self.assertEqual(pi_task.lean_rules(""), "")
+        self.assertEqual(pi_task.lean_rules("@LEAN_RULES@"), "")
+        self.assertEqual(pi_task.lean_rules("/nonexistent/SKILL.md"), "")
+
+    def test_build_sets_lean_rules_when_default_on(self):
+        expected = os.environ.get("PI_TASK_EXPECT_LEAN")
+        if expected is None:
+            self.skipTest("only checked in the Nix build")
+        self.assertEqual(bool(pi_task.lean_rules()), expected == "1")
+
+
 if __name__ == "__main__":
     unittest.main()

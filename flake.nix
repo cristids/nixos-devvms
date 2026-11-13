@@ -83,6 +83,7 @@
           ompPkg = omp.packages.${system}.default;
           herdrPkg = herdr.packages.${system}.default;
           tuiosPkg = tuios.packages.${system}.default;
+          piAdminLean = pi-admin.lib.leanCoding; # lean-coding skill, single source (pi-admin + pi-task)
         };
         modules = [
           # Guests deliberately run the stock nixpkgs kernel so their system closure

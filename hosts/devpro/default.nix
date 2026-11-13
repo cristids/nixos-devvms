@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 
 # devpro — professional work. Will eventually hold SCOPED work credentials (e.g. an
 # Azure DevOps key), so agents in it get driven with more care than in devhobby.
@@ -31,6 +31,9 @@
   # Qwen. Claude/Codex retain the lead/review role. MCPs: context7, ERPNext and
   # session-scoped read-only tuios coordination.
   piDevAgent = {
+    # lean-coding skill on by default for the pi-task workers (and pi-admin below); devpro is the
+    # coding host. Not on cdssrv02: it regressed admin/HAOS analysis there (head-to-head 11-13).
+    leanCodingDefault = true;
     enable = true;
     erpnext.enable = true;
   };
@@ -73,4 +76,10 @@
       done
     done
   '';
+
+  services.pi-admin.leanCodingDefault = true;
+  assertions = [{
+    assertion = config.services.pi-admin.leanCodingDefault && config.piDevAgent.leanCodingDefault;
+    message = "devpro: lean-coding must be on by default for both pi-admin and the pi-task workers";
+  }];
 }
