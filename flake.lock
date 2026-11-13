@@ -87,11 +87,11 @@
     "emacs-31": {
       "flake": false,
       "locked": {
-        "lastModified": 1794389364,
-        "narHash": "sha256-JWNCdcjHtBsuDLklmR4Q7yGhwq1/wE8RLI0iIhkpKgY=",
+        "lastModified": 1794530015,
+        "narHash": "sha256-UgzKlfd+4MfaDdhxe5hvADRSsDFC23DXmpaceQe4pg0=",
         "owner": "emacs-mirror",
         "repo": "emacs",
-        "rev": "205ae0b0583dbfe09e258164adbc49e130645221",
+        "rev": "a2d49cab4db0c498cca73026e1e178503bc8eef1",
         "type": "github"
       },
       "original": {
@@ -109,11 +109,11 @@
         "nixpkgs-stable": "nixpkgs-stable"
       },
       "locked": {
-        "lastModified": 1794436291,
-        "narHash": "sha256-tqiZ1v5pKHnRhGTVuwC91IlQ7CyVDOoFt3m5yPQXLJk=",
+        "lastModified": 1794501470,
+        "narHash": "sha256-S+velBpiFoPs2oEsf3teqYVSyK0DM9rEtpX5q4dVPqg=",
         "owner": "nix-community",
         "repo": "emacs-overlay",
-        "rev": "1a8581d2d123d525f26c3e18ed95e419f2279d04",
+        "rev": "343438460b17add5f4f5d287caf407babfa11d32",
         "type": "github"
       },
       "original": {
@@ -456,11 +456,11 @@
         "rust-overlay": "rust-overlay_3"
       },
       "locked": {
-        "lastModified": 1794452419,
-        "narHash": "sha256-EzVH8sVS4IElS+z1xbR2DF+IGP6Fghkx9YIm+MukPVc=",
+        "lastModified": 1794537811,
+        "narHash": "sha256-Pm4e5CGtGthlRvnFMM16DUSU6Zz0pbiiFq/WAhJVGdk=",
         "owner": "can1357",
         "repo": "oh-my-pi",
-        "rev": "04cd1a7549a02d62ad1d24826198d52507595683",
+        "rev": "84f5adc3bbfc0c2a7caecbad78b1b6eedf0a2939",
         "type": "github"
       },
       "original": {
