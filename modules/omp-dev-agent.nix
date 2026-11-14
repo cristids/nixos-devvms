@@ -9,8 +9,11 @@
 #                        mode: GLM 5.3 plans, Flash implements (--plan-yolo); --quick =
 #                        Flash only. Prints the result, spend per model and
 #                        `git diff --stat`; warns if HEAD moved.
-#   context7-mcp         Context7 docs MCP, Nix-packaged (../pkgs/context7-mcp), run
-#                        locally over stdio. Optional key: /var/lib/context7.key.
+#   context7-mcp         Context7 docs MCP, Nix-packaged — pi-admin's own package
+#                        (services.pi-admin.context7Package, version in
+#                        pi-admin/pkgs/mcp-versions.nix), so devpro's agents and
+#                        pi-admin serve one release. Run locally over stdio.
+#                        Optional key: /var/lib/context7.key.
 #   erpnext-mcp          our own stdio MCP for the devpro dev benches (./erpnext-mcp):
 #                        bench -> port -> sites discovered from
 #                        ~/development/erpnext/benches (test, test1-6, uat, ...),
@@ -35,7 +38,7 @@ let
   cfg = config.ompDevAgent;
   home = "/home/cristian";
 
-  context7Pkg = pkgs.callPackage ../pkgs/context7-mcp { };
+  context7Pkg = config.services.pi-admin.context7Package;
   erpnextMcp = pkgs.callPackage ./erpnext-mcp { };
 
   # Stable command paths for the user configs, so a GC never leaves them dangling.

@@ -39,7 +39,9 @@ in
       };
       url = "http://192.168.40.28:8080";
     };
-    context7Package = pkgs.callPackage ../../pkgs/context7-mcp { };
+    # context7Package and mcpNixosPackage come from the shared module's defaults
+    # (pi-admin's own packages, versions in pi-admin/pkgs/mcp-versions.nix), so
+    # devpro and cdssrv02 serve the same Context7 / mcp-nixos release.
     skills = [ ./skills ];
 
     # Shared ERPNext MCP binary from ompDevAgent.erpnext (every served bench).

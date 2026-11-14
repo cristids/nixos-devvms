@@ -74,7 +74,9 @@ and lands on the persistent `/home` / `/var` volumes.
 
   Data lives in `~/bakeoff`, not in this repo. Secrets: `/var/lib/melious.key` and
   `/var/lib/bakeoff/web-mcp.token`.
-- **MCPs** — `context7-mcp` (Nix-packaged, `pkgs/context7-mcp`) on both VMs; `erpnext-mcp`
+- **MCPs** — `context7-mcp` (Nix-packaged: pi-admin's `services.pi-admin.context7Package`,
+  version in `pi-admin/pkgs/mcp-versions.nix`, so devpro and cdssrv02 share one release)
+  on both VMs; `erpnext-mcp`
   (`modules/erpnext-mcp`, test :8000 / UAT :8001 only, no delete) on devpro. Wired into
   `~/.codex/config.toml` and `~/development/erpnext/.mcp.json` by `omp-dev-integrations`.
   ERPNext creds (user `mcp-dev`), devpro only:

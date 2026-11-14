@@ -111,8 +111,9 @@
       packages.${system} = {
         openspec =
           nixpkgs.legacyPackages.${system}.callPackage ./pkgs/openspec { };
-        context7-mcp =
-          nixpkgs.legacyPackages.${system}.callPackage ./pkgs/context7-mcp { };
+        # context7-mcp moved to pi-admin (pkgs/context7-mcp there, version in
+        # pi-admin/pkgs/mcp-versions.nix) so both pi-admin hosts serve one
+        # release: use `config.services.pi-admin.context7Package`.
         # Build runs the pytest suite: `nix build path:.#erpnext-mcp`.
         erpnext-mcp =
           nixpkgs.legacyPackages.${system}.callPackage ./modules/erpnext-mcp { };
