@@ -5,15 +5,28 @@
 #
 #   specs     npm install specs, exact versions only (e.g. "taskplane@0.30.6")
 #   depsHash  outputHash of the FOD (build once with lib.fakeHash, copy "got:")
+#   resolveBefore  date npm resolves transitive ranges as of (--before). Kept next
+#             to depsHash, per package: it must be at or after the publish date of
+#             the version in `specs` (npm would otherwise refuse to install it),
+#             and it moves only when that package is bumped. One shared value would
+#             re-hash every package whenever any single one of them moves.
 #   bins      { <name> = "<path below lib/node_modules>"; } wrapped with node
 #   wrapArgs  extra makeWrapper args for every bin (env defaults, PATH)
+#
+# npm resolves transitive ranges (^1.2.3) against whatever the registry has that
+# day, so the FOD's hash moved whenever any dependency published a release —
+# same specs, different node_modules, whole server update blocked (cdssrv02
+# 2026-11-12: pi 1.5.0 and mcp-searxng 2.10.0). --before freezes the resolution
+# at the package's date, so depsHash only moves when specs or resolveBefore
+# change.
 #
 # NVM_BIN=$out/bin: tools that look for sibling global packages the nvm way
 # ($NVM_BIN/../lib/node_modules) find this tree. taskplane's forked engine worker needs it to
 # locate pi's dist/cli.js (its argv[1] is not pi's; smoke 11-05: "Cannot find Pi CLI").
 #
-# Bump = edit specs + set depsHash = lib.fakeHash, build, paste the "got:" hash.
-{ pname, version, specs, depsHash, bins, wrapArgs ? [ ], npmFlags ? [ ], meta ? { } }:
+# Bump = edit specs + resolveBefore (a date at or after the new version's publish
+# date) + depsHash = lib.fakeHash, build, paste the "got:" hash.
+{ pname, version, specs, depsHash, resolveBefore, bins, wrapArgs ? [ ], npmFlags ? [ ], meta ? { } }:
 let
   deps = stdenv.mkDerivation {
     pname = "${pname}-deps";
@@ -25,7 +38,8 @@ let
       export HOME=$PWD/.home
       mkdir -p $HOME
       npm install --global --prefix $out --omit=dev --ignore-scripts \
-        --no-audit --no-fund --no-update-notifier ${lib.escapeShellArgs npmFlags} \
+        --no-audit --no-fund --no-update-notifier --before=${resolveBefore} \
+        ${lib.escapeShellArgs npmFlags} \
         ${lib.escapeShellArgs specs}
       # npm writes absolute bin symlinks and cache metadata that differ between
       # runs; only lib/node_modules is used.

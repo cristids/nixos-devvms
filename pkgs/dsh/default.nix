@@ -11,6 +11,7 @@ let version = "0.2.1-rc.5"; in
   inherit version;
   specs = [ "@deepseek-ai/dsh@${version}" ];
   depsHash = "sha256-o6AaDifs7TysR/ozAVJxfesVsxqOzGFkMbJus+ylLng=";
+  resolveBefore = "2026-11-14";  # moves with depsHash only when this package is bumped
   bins.dsh = "@deepseek-ai/dsh/lib/bin.js";
   # Any non-empty value hard-disables the session-telemetry-otel row (the only
   # telemetry in the headless/base profiles; the web app's product telemetry is not

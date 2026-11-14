@@ -22,6 +22,7 @@ in
   ];
   npmFlags = [ "--legacy-peer-deps" ];
   depsHash = "sha256-nTiFaWQvX8jGFEliIareOkywpqYO99lcIFK/mzUZDB0=";
+  resolveBefore = "2026-11-14";  # moves with depsHash only when this package is bumped
   bins = {
     pi = "@earendil-works/pi-coding-agent/dist/bundle/cli.js";
     taskplane = "taskplane/bin/taskplane.mjs";

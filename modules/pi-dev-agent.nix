@@ -13,6 +13,7 @@ let
     version = "2.10.0";
     specs = [ "mcp-searxng@2.10.0" ];
     depsHash = "sha256-UVpDRjaGGj8Spti8/NpeA+q8vN2UXDwI90sPSHt1mwI=";
+    resolveBefore = "2026-11-14";
     bins = { mcp-searxng = "mcp-searxng/dist/cli.js"; };
     meta.description = "SearXNG MCP server for trusted pi-task workers";
   };
