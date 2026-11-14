@@ -22,6 +22,7 @@
     ../../modules/dev-tooling.nix
     ../../modules/agents.nix
     ../../modules/tuios.nix
+    ../../modules/herdr-core.nix
   ];
 
   system.stateVersion = "25.11";
