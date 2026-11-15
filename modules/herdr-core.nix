@@ -76,8 +76,10 @@ in
     };
     # The daemon's environment is what spawned terminals inherit (the hc CLI
     # does not pass the caller's PATH), so every agent has to be here.
+    # /run/wrappers/bin FIRST: it holds the setuid sudo; the sw/bin sudo is not
+    # setuid ("sudo must be owned by uid 0 and have the setuid bit set").
     serviceConfig.Environment = [
-      "PATH=/run/current-system/sw/bin:/run/wrappers/bin"
+      "PATH=/run/wrappers/bin:/run/current-system/sw/bin"
     ];
   };
 }

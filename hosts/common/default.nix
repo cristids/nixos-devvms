@@ -23,6 +23,7 @@
     ../../modules/agents.nix
     ../../modules/tuios.nix
     ../../modules/herdr-core.nix
+    ../../modules/t3code.nix
   ];
 
   system.stateVersion = "25.11";
