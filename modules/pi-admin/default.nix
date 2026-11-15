@@ -27,21 +27,10 @@ in
     configRepo = "/home/cristian/development/nixos-devvms";
     package = pkgs.callPackage ../../pkgs/pi-coding-agent { };
     bubblewrap = config.ompDevAgent.bubblewrap;
-    searxng = {
-      package = (pkgs.callPackage ../../pkgs/npm-global { }) {
-        pname = "mcp-searxng";
-        version = "2.10.0";
-        specs = [ "mcp-searxng@2.10.0" ];
-        depsHash = "sha256-UVpDRjaGGj8Spti8/NpeA+q8vN2UXDwI90sPSHt1mwI=";
-        resolveBefore = "2026-11-14";
-        bins = { mcp-searxng = "mcp-searxng/dist/cli.js"; };
-        meta.description = "SearXNG MCP server for pi-admin";
-      };
-      url = "http://192.168.40.28:8080";
-    };
-    # context7Package and mcpNixosPackage come from the shared module's defaults
+    searxng = { url = "http://192.168.40.28:8080"; };
+    # searxng, context7 and mcp-nixos come from the shared module's defaults
     # (pi-admin's own packages, versions in pi-admin/pkgs/mcp-versions.nix), so
-    # devpro and cdssrv02 serve the same Context7 / mcp-nixos release.
+    # devpro and cdssrv02 serve the same release.
     skills = [ ./skills ];
 
     # Shared ERPNext MCP binary from ompDevAgent.erpnext (every served bench).

@@ -471,11 +471,11 @@
     },
     "pi-admin": {
       "locked": {
-        "lastModified": 1794731175,
-        "narHash": "sha256-O3daArAYGcFlyLfCCQuF200+PAQ9ZoKKhEv0cIQc8uU=",
+        "lastModified": 1794732245,
+        "narHash": "sha256-65d5M2H0e/8utTJ6fT6vbl3KMPZocqSjfqgDiLv4L0U=",
         "ref": "main",
-        "rev": "830565b91628802e8510a735cddc62d698a983ca",
-        "revCount": 33,
+        "rev": "36664dcae1eea2b869aa1099d54fd0abcd42d084",
+        "revCount": 34,
         "type": "git",
         "url": "ssh://git@github-pi-admin/cristids/pi-admin"
       },
