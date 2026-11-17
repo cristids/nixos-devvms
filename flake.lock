@@ -431,6 +431,22 @@
     },
     "nixpkgs_5": {
       "locked": {
+        "lastModified": 1772963539,
+        "narHash": "sha256-9jVDGZnvCckTGdYT53d/EfznygLskyLQXYwJLKMPsZs=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "9dcb002ca1690658be4a04645215baea8b95f31d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_6": {
+      "locked": {
         "lastModified": 1792639626,
         "narHash": "sha256-VpGxEz/7DxwNTMgZGsceZ73aUM1nH7C+84HqlTNP128=",
         "owner": "NixOS",
@@ -469,6 +485,25 @@
         "type": "github"
       }
     },
+    "paseo": {
+      "inputs": {
+        "nixpkgs": "nixpkgs_5"
+      },
+      "locked": {
+        "lastModified": 1794895585,
+        "narHash": "sha256-NmVhT+H3pSVUvB2hLYZYFPGbdnXSpEPcQG9w13q7XFQ=",
+        "owner": "getpaseo",
+        "repo": "paseo",
+        "rev": "c09a3d81e772a747dd11bca43d860f3518f07c2d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "getpaseo",
+        "ref": "v0.16.1",
+        "repo": "paseo",
+        "type": "github"
+      }
+    },
     "pi-admin": {
       "locked": {
         "lastModified": 1794912357,
@@ -493,6 +528,7 @@
         "herdr": "herdr",
         "nixpkgs": "nixpkgs_3",
         "omp": "omp",
+        "paseo": "paseo",
         "pi-admin": "pi-admin",
         "tuios": "tuios"
       }
@@ -663,7 +699,7 @@
         "flake-root": "flake-root",
         "git-hooks-nix": "git-hooks-nix",
         "nix-fast-build": "nix-fast-build",
-        "nixpkgs": "nixpkgs_5",
+        "nixpkgs": "nixpkgs_6",
         "treefmt-nix": "treefmt-nix_3"
       },
       "locked": {

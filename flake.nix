@@ -72,9 +72,14 @@
     # used for its CI cross-builds.
     # Pinned to a release tag in lockstep with cdssrv02 and nixos-laptops.
     emacs-tramp-rpc.url = "github:ArthurHeymans/emacs-tramp-rpc/v0.16.0";
+
+    # Paseo (getpaseo/paseo) daemon on devpro (modules/paseo.nix). Same tag AND
+    # lock rev as nixos_llm_srv (cdssrv02): no nixpkgs follows, so its own
+    # nixpkgs builds it and the store path is identical on both hosts.
+    paseo.url = "github:getpaseo/paseo/v0.16.1";
   };
 
-  outputs = { self, nixpkgs, omp, herdr, tuios, emacs-overlay, emacs-31, emacs-tramp-rpc, pi-admin }:
+  outputs = { self, nixpkgs, omp, herdr, tuios, emacs-overlay, emacs-31, emacs-tramp-rpc, pi-admin, paseo }:
     let
       system = "x86_64-linux";
       mkVM = host: nixpkgs.lib.nixosSystem {
@@ -83,6 +88,7 @@
           ompPkg = omp.packages.${system}.default;
           herdrPkg = herdr.packages.${system}.default;
           tuiosPkg = tuios.packages.${system}.default;
+          paseoPkg = paseo.packages.${system}.default;
           piAdminLean = pi-admin.lib.leanCoding; # lean-coding skill, single source (pi-admin + pi-task)
         };
         modules = [
@@ -96,6 +102,7 @@
               # nixpkgs because they stopped building (auto-pins.json).
               (import ./overlays/auto-pins.nix)
             ]; }
+          paseo.nixosModules.paseo # off unless services.paseo.enable (devpro)
           pi-admin.nixosModules.default # off unless services.pi-admin.enable (devpro)
           ./hosts/common
           (./hosts + "/${host}")

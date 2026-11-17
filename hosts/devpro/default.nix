@@ -13,6 +13,8 @@
     # Interactive pi-admin (Melious DeepSeek + gate) for ERPNext/dev work in any
     # folder, outside the pi-task worker pool (2026-11-11).
     ../../modules/pi-admin
+    # Paseo daemon, LAN http://192.168.40.26:6767 (same as cdssrv02's).
+    ../../modules/paseo.nix
   ];
 
   networking.hostName = "devpro";
