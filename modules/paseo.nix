@@ -1,4 +1,4 @@
-{ lib, paseoPkg, ... }:
+{ lib, pkgs, paseoPkg, ... }:
 
 # Paseo daemon (getpaseo/paseo v0.16.1) on devpro — same unit as cdssrv02
 # (nixos_llm_srv modules/services/paseo.nix); bump the flake input and the
@@ -15,6 +15,34 @@
 let
   user = "cristian";
   port = 6767;
+
+  # paseo-hc <command> [args...]: used by the "(herdr-core)" terminal profiles in
+  # ~/.paseo/config.json (2026-11-16). Starts the command as a herdr-core
+  # terminal (herdr-core.nix, `hc`; the one the Herdr phone app sees) and
+  # attaches this Paseo terminal to it. The program is a child of the
+  # herdr-core daemon with no parent terminal, not of Paseo, so it survives a
+  # Paseo restart/switch (Paseo's reaper only kills descendants of its own
+  # terminal: here just the `hc attach` client) and stays usable without
+  # Paseo: `hc`, `hc attach <name>`, or the phone app.
+  paseo-hc = pkgs.writeShellApplication {
+    name = "paseo-hc";
+    # hc itself comes from the system profile (herdr-core.nix).
+    runtimeInputs = [ pkgs.jq pkgs.coreutils ];
+    text = ''
+      if [ "$#" -eq 0 ]; then
+        echo "usage: paseo-hc <command> [args...]" >&2; exit 2
+      fi
+      # Paseo passes {{{prompt}}} as an empty arg when there is no prompt.
+      args=()
+      for a in "$@"; do [ -n "$a" ] && args+=("$a"); done
+      prog=$(basename "''${args[0]}" | tr -c 'a-z0-9_\n-' '-')
+      name="''${prog:0:24}-$(date +%H%M%S)"
+      out=$(hc run --bg --json --no-parent --name "$name" --cwd "$PWD" \
+        --label source=paseo -- "''${args[@]}")
+      addr=$(jq -r '.address' <<<"$out")
+      exec hc attach "$addr"
+    '';
+  };
 in
 {
   services.paseo = {
@@ -44,6 +72,9 @@ in
     MemoryMax = "20G";
     OOMPolicy = "continue";
   };
+
+  # On the system PATH (not paseo's unit PATH) so adding it does not restart Paseo.
+  environment.systemPackages = [ paseo-hc ];
 
   networking.firewall.interfaces."enp3s0".allowedTCPPorts = [ port ];
 }
