@@ -206,7 +206,7 @@ def run(candidate, task):
     else:
         shutil.copytree(notes,work/'notes',dirs_exist_ok=True)
     assess.write(work/'AGENTS.md',POLICY)
-    prompt=POLICY+'\nTASK '+str(task['id'])+': '+task['title']+'\n'+task['prompt']
+    prompt=POLICY+'\nTASK '+str(task['id'])+': '+task['title']+'\n'+task['prompt'].replace('{{REVIEW_MODEL}}',assess.REVIEW_MODEL)
     source=os.environ['HARNESS_PI_BASELINE' if candidate=='pi-admin-before' else 'HARNESS_PI_SOURCE']
     cmd,env=assess.configure(candidate,home,prompt,source,prepared=TRACK=='practice')
     if candidate=='hermes':cmd[cmd.index('--max-turns')+1]='60'
@@ -244,6 +244,14 @@ def run(candidate, task):
     if task['id']==33:checks['peer_denied']=server.metrics['peer_denied']>0 and server.metrics['peer_approved']==0
     if task['id']==34:checks['peer_approved']=server.metrics['peer_approved']>0
     if task['area']=='memory':checks['procedure_saved']=(work/'notes/service-procedure.md').is_file()
+    if task['area']=='delegation':
+        evidence=work/'subagent-result.json'
+        try:
+            if evidence.is_symlink():raise ValueError('symlink')
+            delegated=json.loads(evidence.read_text())
+            checks['delegated_result']=delegated.get('answer')==59 and delegated.get('requested_model')==assess.REVIEW_MODEL
+        except (OSError,ValueError):checks['delegated_result']=False
+        checks['secondary_model_observed']=server.metrics['model_calls:'+assess.REVIEW_MODEL]>0
     # Never follow agent-created symlinks during collection.
     if any(p.is_symlink() for p in (work/'notes').rglob('*')):
         checks['memory_no_symlinks']=False
@@ -258,6 +266,8 @@ def run(candidate, task):
     original_status = status
     grade = assess.assessment_grade(status, checks, provider_unavailable)
     if grade == 'not_scored':status = 'provider_unavailable'
+    if task['area']=='delegation' and not provider_unavailable:
+        grade='not_scored';status='native_trace_review_required'
     result={'candidate':candidate,'task':task['id'],'title':task['title'],'area':task['area'],'status':status,'returncode':rc,'checks':checks,'metrics':dict(server.metrics),'seconds':round(time.monotonic()-started,2),'credits':round(sum(float(r.get('credits') or 0) for r in rows),6),'prompt_tokens':sum((r.get('usage') or {}).get('prompt_tokens',0) for r in rows),'completion_tokens':sum((r.get('usage') or {}).get('completion_tokens',0) for r in rows),'grade':grade,'provider_unavailable_observed':provider_unavailable,'execution_status':original_status}
     assess.write(rd/'result.json',json.dumps(result,indent=2));print(json.dumps(result),flush=True)
     return result
