@@ -90,6 +90,9 @@ podman rm -af >/dev/null 2>&1 || true
 podman volume rm -af >/dev/null 2>&1 || true
 podman secret rm --all >/dev/null 2>&1 || true
 rm -f /run/systemd/system/ops-{app,packaged,occupant,tls,container,practice}.service
+rm -rf /run/systemd/system/ops-{app,packaged,occupant,tls,container,practice}.service.d
+rm -f /etc/systemd/system/ops-{app,packaged,occupant,tls,container,practice}.service
+rm -rf /etc/systemd/system/ops-{app,packaged,occupant,tls,container,practice}.service.d
 rm -rf /srv/assessment /root/.config/assessment /var/lib/ops
 mkdir -p /srv/assessment /root/.config/assessment /var/lib/ops /root/.ssh /srv/business
 chmod 700 /root/.config/assessment

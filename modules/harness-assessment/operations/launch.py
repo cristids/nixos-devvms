@@ -10,7 +10,7 @@ import tempfile
 
 p=argparse.ArgumentParser()
 p.add_argument('--root',type=Path,required=True)
-p.add_argument('--candidates',nargs='+',default=['pi-admin'],choices=['pi-admin-before','pi-admin','hermes','opencode','vibe','goose','dsh','omp','letta','openclaw'])
+p.add_argument('--candidates',nargs='+',default=['pi-admin'],choices=['pi-admin-before','pi-admin','hermes','opencode','vibe','goose','dsh','omp','letta','openclaw','qwen'])
 p.add_argument('--tasks')
 p.add_argument('--track',choices=['operations','cyber','practice'],default='operations')
 p.add_argument('--model', default='deepseek-v4.1-flash-1017')
