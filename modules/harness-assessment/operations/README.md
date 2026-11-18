@@ -20,6 +20,11 @@ memory and portable notes but resetting remote task state. This permits repeat
 and changed-prerequisite tests without contamination from earlier deployments.
 Run one candidate per invocation so its guests cannot retain another's changes.
 
+Prepared and guided configurations are required before scoring or selecting a
+winner. See [PREPARATION.md](PREPARATION.md) for preparation evidence, separate
+practice tasks, frozen profiles and accounting for supervisor assistance. The
+earlier basic integration screens do not meet that requirement.
+
 ## Running and supervising
 
 Installed on devhobby through the nixos-devvms configuration:
