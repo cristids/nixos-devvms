@@ -4,6 +4,7 @@ import secrets
 import json
 import os
 import shutil
+import shlex
 import sys
 import subprocess
 from acceptance import strict_command
@@ -63,6 +64,25 @@ class OperationsTests(unittest.TestCase):
                 self.assertNotEqual(*runtimes)
             finally:
                 for runtime in runtimes:shutil.rmtree(runtime)
+
+    @unittest.skipUnless(shutil.which('strace'), 'Nix test derivation supplies strace')
+    def test_business_audit_distinguishes_metadata_from_real_reads(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)/'business';root.mkdir()
+            records=root/'records.txt';records.write_text('PRIVATE_BUSINESS_RECORD_TEST\n')
+            secret_root=Path(d)/'secrets';secret_root.mkdir()
+            metadata=f'true; stat {shlex.quote(str(records))}; ls {shlex.quote(str(root))}; printf %s {shlex.quote(str(records))} > {shlex.quote(d+"/note")}'
+            result=guard.run_guarded(metadata,str(secret_root),str(root))
+            self.assertEqual(result['returncode'],0)
+            self.assertFalse(result['business_content_opened'])
+            # Relative paths and symlinks must resolve to the protected target.
+            alias=Path(d)/'alias';alias.symlink_to(records)
+            for command in (f'cd {shlex.quote(str(root))}; wc -l < records.txt',
+                            f'cat {shlex.quote(str(alias))}'):
+                result=guard.run_guarded(command,str(secret_root),str(root))
+                self.assertEqual(result['returncode'],0)
+                self.assertTrue(result['business_content_opened'])
+                self.assertNotIn('PRIVATE_BUSINESS_RECORD_TEST',result['output'])
 
     def test_private_value_cannot_escape(self):
         with tempfile.TemporaryDirectory() as d:

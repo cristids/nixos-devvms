@@ -26,7 +26,7 @@ let
     };
     environment.systemPackages = with pkgs; [
       python curl openssl openssh git jq gnutar gzip coreutils iproute2
-      procps sqlite postgresql nginx nixos-rebuild
+      procps sqlite postgresql nginx nixos-rebuild strace
     ];
     nix.settings = { experimental-features = [ "nix-command" "flakes" ]; substituters = lib.mkForce [ ]; };
     nix.nixPath = [ "nixpkgs=${pkgs.path}" ];

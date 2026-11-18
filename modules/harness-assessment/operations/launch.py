@@ -12,13 +12,21 @@ p=argparse.ArgumentParser()
 p.add_argument('--root',type=Path,required=True)
 p.add_argument('--candidates',nargs='+',default=['pi-admin'],choices=['pi-admin-before','pi-admin','hermes','opencode','vibe','goose','dsh'])
 p.add_argument('--tasks')
-p.add_argument('--track',choices=['operations','cyber'],default='operations')
+p.add_argument('--track',choices=['operations','cyber','practice'],default='operations')
+p.add_argument('--model', default='deepseek-v4.1-flash-1017')
+p.add_argument('--review-model', default='kimi-k3')
+p.add_argument('--ticket-credits', type=float, default=0.60)
 p.add_argument('--timeout',type=int,default=480)
 p.add_argument('--max-credits',type=float,default=20)
 p.add_argument('--validate',action='store_true')
 p.add_argument('--background',action='store_true')
 p.add_argument('--report',action='store_true')
 a=p.parse_args()
+import math
+if not math.isfinite(a.ticket_credits) or a.ticket_credits <= 0:
+    p.error('ticket-credits must be finite and positive')
+if a.model == a.review_model:
+    p.error('select a different model for independent purpose review')
 if a.report:
     from report import report
     print(json.dumps(report(a.root),indent=2))
@@ -28,6 +36,9 @@ if len(a.candidates) != 1:
 from catalog import TASKS
 if a.track=='cyber':
     from cyber import TASKS
+if a.track=='practice':
+    from practice import TASKS
+    if a.validate:p.error('practice is for contender preparation, not infrastructure controls')
 allowed={t['id'] for t in TASKS}
 if a.tasks is None:a.tasks=','.join(str(t['id']) for t in TASKS)
 try:
@@ -42,6 +53,7 @@ a.root=a.root.resolve();a.root.mkdir(parents=True,exist_ok=False);a.root.chmod(0
 # Keep the path short enough for Unix sockets, regardless of run-root length.
 runtime=Path(tempfile.mkdtemp(prefix='ops-runtime-'))
 env=os.environ.copy()
+env.update(HARNESS_SOLVER_MODEL=a.model, HARNESS_REVIEW_MODEL=a.review_model, HARNESS_TICKET_CREDITS=str(a.ticket_credits))
 env['XDG_RUNTIME_DIR']=str(runtime)
 env.update(HARNESS_OPERATIONS_TRACK=a.track,HARNESS_OPERATIONS_ROOT=str(a.root),HARNESS_OPERATIONS_CANDIDATES=','.join(a.candidates),HARNESS_OPERATIONS_TASKS=a.tasks,HARNESS_OPERATIONS_TIMEOUT=str(a.timeout),HARNESS_OPERATIONS_MAX_CREDITS=str(a.max_credits),HARNESS_OPERATIONS_VALIDATE='1' if a.validate else '0',HARNESS_OPERATIONS_SUPERVISOR=str(Path(__file__).parent/'supervisor.py'))
 with (a.root/'driver.log').open('w') as log:

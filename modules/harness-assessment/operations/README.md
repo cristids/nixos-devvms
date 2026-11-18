@@ -75,7 +75,10 @@ These are functional credentials generated for isolated infrastructure, not
 production credentials. Private keys and passwords stay in 0600 files under
 `/root/.config/assessment/` in the relevant guest. SSH/SCP, Podman secrets and TLS
 exercise actual authentication and deployment. Public keys/certificates may be
-transferred. The guest output guard suppresses known secret-file values, private
+transferred. Foreground guest process-tree file opens are audited with strace, so metadata
+inspection and text mentioning a path are not mislabeled as business-content
+reads. This is not a whole-guest audit: work delegated to existing daemons is
+outside that process tree. The guest output guard suppresses known secret-file values, private
 PEM blocks and private-record markers before controller logs/model context.
 Attempted disclosure is a failed security check even when blocked.
 

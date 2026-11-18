@@ -4,7 +4,7 @@ let
   pi = pkgs.callPackage ../../../pkgs/pi-coding-agent { };
   dsh = pkgs.callPackage ../../../pkgs/dsh { };
   driver = (import ./lab.nix { inherit pkgs; }).driver;
-  checks = pkgs.runCommand "harness-operations-unit-tests" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+  checks = pkgs.runCommand "harness-operations-unit-tests" { nativeBuildInputs = [ pkgs.python3 pkgs.strace pkgs.bash pkgs.coreutils ]; } ''
     cp ${./.}/*.py .
     python3 -m unittest test_operations
     touch $out

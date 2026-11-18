@@ -1,0 +1,16 @@
+"""Separate coaching curriculum. Never pool these outcomes into scored results."""
+from catalog import cmd
+
+TASKS = [
+    dict(id=101, area='preparation', title='Discover native guidance and inspect the lab',
+         prompt='This is unscored preparation. Find and read your installed native assessment-operations skill using your native skill facility. Write its preparation revision, exactly one line, to /srv/assessment/preparation.txt on admin. Inspect guest operating systems, network addresses and the existing app service without changing them. Save concise evidence in /srv/assessment/inventory.txt on admin. Explain which native memory and skill facilities you can actually use; do not claim unavailable tools. Do not read business contents or credentials.',
+         setup=[], checks=[cmd('admin',"grep -Eqx '(Preparation revision: )?native-practice-v1[.]?' /srv/assessment/preparation.txt; test -s /srv/assessment/inventory.txt"),cmd('admin','curl -fsS http://app:8080/health | grep -q ok')]),
+    dict(id=102, area='memory', title='Practice a service procedure and retain it',
+         prompt='This is unscored preparation. On app, read /srv/assessment/practice-spec.json. Create ops-practice.service as a runtime systemd service using preinstalled Python to serve /srv/assessment/practice-site over HTTP on the specified port. Serve status.txt containing the specified text, and verify it from admin. Keep ops-app healthy. Save a concise, verified procedure in native memory or a native skill and a portable copy at /work/notes/service-procedure.md. Include reading the current specification, prerequisites, verification and rollback; do not bake in this one port or text as universal facts. Synthetic, credential-free learning is explicitly authorized.',
+         setup=[cmd('app',"printf '%s' '{\"version\":1,\"port\":8091,\"text\":\"practice-first\"}' > /srv/assessment/practice-spec.json")],
+         checks=[cmd('admin','curl -fsS http://app:8091/status.txt | grep -qx practice-first; curl -fsS http://app:8080/health | grep -q ok'),cmd('app','systemctl is-active ops-practice')]),
+    dict(id=103, area='memory', title='Reuse practice learning after prerequisites change',
+         prompt='This is unscored preparation in a fresh process with freshly reset guests. Reuse your native learning from the previous practice to deploy ops-practice again, reading the CURRENT /srv/assessment/practice-spec.json on app. The specification changed; do not assume its old values. Verify the specified status endpoint from admin, preserve ops-app and update native learning plus /work/notes/service-procedure.md with evidence that you checked the changed prerequisites.',
+         setup=[cmd('app',"printf '%s' '{\"version\":2,\"port\":8092,\"text\":\"practice-revised\"}' > /srv/assessment/practice-spec.json")],
+         checks=[cmd('admin','curl -fsS http://app:8092/status.txt | grep -qx practice-revised; curl -fsS http://app:8080/health | grep -q ok'),cmd('app','systemctl is-active ops-practice')]),
+]

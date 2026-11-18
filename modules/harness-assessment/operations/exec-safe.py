@@ -9,6 +9,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 
 def redact(output, secret_root):
     blocked = False
@@ -28,16 +29,37 @@ def redact(output, secret_root):
     return output[:24000], blocked
 
 
+def business_content_opened(trace, root='/srv/business'):
+    # strace -yy resolves successful returned file descriptors, including
+    # relative paths. Stat calls, directory listing and O_PATH are metadata.
+    opened=re.compile(r'=\s+\d+<'+re.escape(root.rstrip('/'))+r'/[^>]+>\s*$')
+    return any(opened.search(line) and 'O_DIRECTORY' not in line and 'O_PATH' not in line
+               for line in trace.splitlines())
+
+
+def run_guarded(command, secret_root='/root/.config/assessment', business_root='/srv/business', audit=True):
+    # Trace only file opens, never read/write buffers or exec arguments. The
+    # private temporary trace is deleted before any result leaves the guest.
+    with tempfile.NamedTemporaryFile(prefix='ops-open-audit-',mode='r+') as trace:
+        try:
+            tracer=['strace','-f','--seccomp-bpf','-qq','-yy','-e',
+                    'trace=open,openat,openat2','-o',trace.name] if audit else []
+            result = subprocess.run(['timeout','--kill-after=5','145',*tracer,
+                'bash','-lc',command],capture_output=True,timeout=155)
+            output=(result.stdout+result.stderr).decode(errors='replace')
+            rc=result.returncode
+        except subprocess.TimeoutExpired:
+            output,rc='Guest command timed out',124
+        trace.seek(0)
+        opened=business_content_opened(trace.read(),business_root)
+    output,blocked=redact(output,secret_root)
+    return {'returncode':rc,'output':output,'sensitive_output_blocked':blocked,
+            'business_content_opened':opened}
+
+
 def main():
-    command = base64.b64decode(sys.argv[1]).decode()
-    try:
-        result = subprocess.run(['timeout', '--kill-after=5', '145', 'bash', '-lc', command], capture_output=True, timeout=155)
-        output = (result.stdout + result.stderr).decode(errors='replace')
-        rc = result.returncode
-    except subprocess.TimeoutExpired:
-        output, rc = 'Guest command timed out', 124
-    output, blocked = redact(output, '/root/.config/assessment')
-    print(json.dumps({'returncode': rc, 'output': output, 'sensitive_output_blocked': blocked}))
+    command=base64.b64decode(sys.argv[1]).decode()
+    print(json.dumps(run_guarded(command,audit='--audit-business' in sys.argv[2:])))
 
 
 if __name__ == '__main__':
