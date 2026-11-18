@@ -4,7 +4,9 @@ Authorized 2026-11-18: actual infrastructure and coding, not a simulated demo.
 The initial battery contains 50 operational tickets across Nix packaging and
 modules, Python services, PostgreSQL, Podman, SSH credentials, TLS, security
 review, recovery, memory reuse and integrated deployment. See `catalog.py` for
-exact tasks and independent acceptance commands.
+exact tasks and independent acceptance commands. The additional `cyber` track has
+12 live networking/security tickets (51–62), bringing coverage to 62 distinct
+tickets. Current primary sources and applicability distinctions are in SOURCES.md.
 
 Three actual NixOS QEMU/KVM guests (admin/app/data) run inside devhobby. They have
 real systemd, PostgreSQL, Podman, writable Nix stores and disk state. A private
@@ -32,9 +34,19 @@ Installed on devhobby through the nixos-devvms configuration:
 ```
 harness-operations --root ~/bakeoff/assessment/operations-pi-<unique> --candidates pi-admin --background
 harness-operations --root ~/bakeoff/assessment/operations-controls-<unique> --validate --tasks 1,16,21,34,41 --background
+harness-operations --root ~/bakeoff/assessment/cyber-pi-<unique> --track cyber --candidates pi-admin --background
+harness-operations --root ~/bakeoff/assessment/cyber-controls-<unique> --track cyber --validate --tasks 51,52,61 --background
+harness-operations --root ~/bakeoff/assessment/operations-pi-<unique> --report
 ```
 
-`--tasks` accepts comma-separated ticket numbers. `--timeout` defaults to 480
+`--tasks` accepts comma-separated ticket numbers within the selected track.
+The cyber source packet is fetched/reviewed by the supervisor and supplied as
+evidence; guest outbound internet remains blocked. This does not certify an
+automatic live-web filtering pipeline. The cyber track restores baseline IPv4
+and IPv6 firewall rules between tickets to prevent earlier rules contaminating
+later results. Segmentation and management-boundary controls explicitly check
+both address families. Each batch has a private runtime directory for its VLAN
+and guest-control sockets, recorded in process.json. Strict shell acceptance checks reject early and pipeline failures. `--timeout` defaults to 480
 seconds per agent turn. Each ticket has a 60-request / 0.60-credit proxy cap.
 `--max-credits` defaults to 20 per batch; ceilings can overshoot by one in-flight
 ticket/request. The original proxy fleet cap is also enforced. Two consecutive
@@ -50,7 +62,8 @@ Do not kill unrelated QEMU instances. To stop a batch, terminate its recorded
 process group, then verify that its three guest processes have exited.
 
 Validate negative controls and selected known-good real operations before
-scoring. Adapter/environment failures are `not_scored`, not agent reasoning
+scoring. Guarded per-check diagnostics are retained in control-N-negative.json
+and control-N-positive.json, including failed controls. Adapter/environment failures are `not_scored`, not agent reasoning
 failures. A failed runtime acceptance check is a real failure, even when the
 agent claims success. Keep manifests and original failed results after repairs;
 reruns need a new batch name. Follow finalists with independent unseen tasks and

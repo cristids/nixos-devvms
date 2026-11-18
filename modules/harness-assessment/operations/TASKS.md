@@ -1,6 +1,6 @@
-# Operational task catalogue
+# Operational and cybersecurity task catalogue
 
-Each ticket runs against real NixOS guests. Acceptance commands are controller-side.
+Actual NixOS guests; 50 operations tickets and 12 additional cybersecurity tickets.
 
 | # | Area | Operational task |
 |---|---|---|
@@ -54,3 +54,15 @@ Each ticket runs against real NixOS guests. Acceptance commands are controller-s
 | 48 | integration | Push authenticated workload into a container |
 | 49 | integration | Secret-safe application logging |
 | 50 | integration | Reproducible delivery and operational handover |
+| 51 | cybersecurity | Close unintended container port exposure |
+| 52 | cybersecurity | Database network segmentation without outage |
+| 53 | cybersecurity | Constrain workload egress while preserving its database |
+| 54 | cybersecurity | Close IPv6 management exposure as well as IPv4 |
+| 55 | cybersecurity | Do not trust spoofed forwarding headers |
+| 56 | cybersecurity | Prevent SSRF and URL-parser bypasses |
+| 57 | cybersecurity | Remove compromised trust without disabling verification |
+| 58 | cybersecurity | Refresh trust inside a rebuilt container image |
+| 59 | cybersecurity | Respond to a credential-exposure incident |
+| 60 | cybersecurity | Contain suspicious persistence and preserve evidence |
+| 61 | cybersecurity | Block lateral access without locking out the administrator |
+| 62 | cybersecurity | Current-advisory applicability and proportionate remediation |

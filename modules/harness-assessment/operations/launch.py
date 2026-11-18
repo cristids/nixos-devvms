@@ -6,11 +6,13 @@ import os
 from pathlib import Path
 import subprocess
 import time
+import tempfile
 
 p=argparse.ArgumentParser()
 p.add_argument('--root',type=Path,required=True)
 p.add_argument('--candidates',nargs='+',default=['pi-admin'],choices=['pi-admin-before','pi-admin','hermes','opencode','vibe','goose','dsh'])
-p.add_argument('--tasks',default=','.join(str(i) for i in range(1,51)))
+p.add_argument('--tasks')
+p.add_argument('--track',choices=['operations','cyber'],default='operations')
 p.add_argument('--timeout',type=int,default=480)
 p.add_argument('--max-credits',type=float,default=20)
 p.add_argument('--validate',action='store_true')
@@ -23,17 +25,27 @@ if a.report:
     raise SystemExit(0)
 if len(a.candidates) != 1:
     p.error('use one candidate per invocation for independent guest state')
+from catalog import TASKS
+if a.track=='cyber':
+    from cyber import TASKS
+allowed={t['id'] for t in TASKS}
+if a.tasks is None:a.tasks=','.join(str(t['id']) for t in TASKS)
 try:
     selected = [int(x) for x in a.tasks.split(',')]
-    if not selected or any(x < 1 or x > 50 for x in selected): raise ValueError()
+    if not selected or any(x not in allowed for x in selected): raise ValueError()
 except ValueError:
-    p.error('tasks must be comma-separated numbers from 1 to 50')
+    p.error('tasks must be comma-separated ticket numbers in the selected track')
 a.root=a.root.resolve();a.root.mkdir(parents=True,exist_ok=False);a.root.chmod(0o700)
 (a.root/'vms').mkdir()
+# The test driver puts VLAN/control sockets directly in XDG_RUNTIME_DIR.
+# A shared login runtime directory collides across independent batches.
+# Keep the path short enough for Unix sockets, regardless of run-root length.
+runtime=Path(tempfile.mkdtemp(prefix='ops-runtime-'))
 env=os.environ.copy()
-env.update(HARNESS_OPERATIONS_ROOT=str(a.root),HARNESS_OPERATIONS_CANDIDATES=','.join(a.candidates),HARNESS_OPERATIONS_TASKS=a.tasks,HARNESS_OPERATIONS_TIMEOUT=str(a.timeout),HARNESS_OPERATIONS_MAX_CREDITS=str(a.max_credits),HARNESS_OPERATIONS_VALIDATE='1' if a.validate else '0',HARNESS_OPERATIONS_SUPERVISOR=str(Path(__file__).parent/'supervisor.py'))
+env['XDG_RUNTIME_DIR']=str(runtime)
+env.update(HARNESS_OPERATIONS_TRACK=a.track,HARNESS_OPERATIONS_ROOT=str(a.root),HARNESS_OPERATIONS_CANDIDATES=','.join(a.candidates),HARNESS_OPERATIONS_TASKS=a.tasks,HARNESS_OPERATIONS_TIMEOUT=str(a.timeout),HARNESS_OPERATIONS_MAX_CREDITS=str(a.max_credits),HARNESS_OPERATIONS_VALIDATE='1' if a.validate else '0',HARNESS_OPERATIONS_SUPERVISOR=str(Path(__file__).parent/'supervisor.py'))
 with (a.root/'driver.log').open('w') as log:
     child=subprocess.Popen([os.environ['HARNESS_OPERATIONS_DRIVER']+'/bin/nixos-test-driver','-o',str(a.root/'vms')],cwd=a.root,env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
-(a.root/'process.json').write_text(json.dumps({'pid':child.pid,'started':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'root':str(a.root)},indent=2))
+(a.root/'process.json').write_text(json.dumps({'pid':child.pid,'started':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'root':str(a.root),'runtime':str(runtime)},indent=2))
 print(json.dumps({'pid':child.pid,'root':str(a.root),'log':str(a.root/'driver.log')}),flush=True)
 if not a.background:raise SystemExit(child.wait())

@@ -20,12 +20,16 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 import assess
 from catalog import TASKS
+from acceptance import strict_command
+TRACK=os.environ.get('HARNESS_OPERATIONS_TRACK','operations')
+if TRACK=='cyber':
+    from cyber import TASKS
 
 ROOT = Path(os.environ['HARNESS_OPERATIONS_ROOT']).resolve()
 ROOT.mkdir(parents=True, exist_ok=True)
 os.chmod(ROOT, 0o700)
 CANDIDATES = os.environ.get('HARNESS_OPERATIONS_CANDIDATES', 'pi-admin').split(',')
-SELECT = {int(x) for x in os.environ.get('HARNESS_OPERATIONS_TASKS', ','.join(str(i) for i in range(1,51))).split(',')}
+SELECT = {int(x) for x in os.environ.get('HARNESS_OPERATIONS_TASKS', ','.join(str(t['id']) for t in TASKS)).split(',')}
 TIMEOUT = int(os.environ.get('HARNESS_OPERATIONS_TIMEOUT', '480'))
 RUN_LIMIT = float(os.environ.get('HARNESS_OPERATIONS_MAX_CREDITS', '20'))
 LOCK = threading.Lock()
@@ -46,7 +50,7 @@ def execute(node, command):
 
 
 def must(node, command):
-    r = execute(node, command)
+    r = execute(node, strict_command(command))
     if r['returncode'] or r['sensitive_output_blocked']:
         raise RuntimeError('setup failed on '+node+': '+r['output'][:2000])
     return r['output']
@@ -74,6 +78,8 @@ def reset(task):
     # Explicit task-local reseeding, recorded in the manifest. Native memory is
     # retained; remote infrastructure is returned to the same baseline each time.
     for node in machines:
+        if TRACK=='cyber':
+            must(node, "systemctl stop 'ops-*' 2>/dev/null || true; rm -f /run/systemd/system/ops-*.service; rm -f /run/systemd/system/multi-user.target.wants/ops-*")
         must(node, '''systemctl stop ops-app ops-packaged ops-occupant ops-tls ops-container 2>/dev/null || true
 podman rm -af >/dev/null 2>&1 || true
 podman volume rm -af >/dev/null 2>&1 || true
@@ -96,6 +102,10 @@ systemctl restart firewall
     put('app', '/run/systemd/system/ops-app.service', BASE_UNIT)
     must('app','systemctl daemon-reload; systemctl start ops-app')
     must('admin','curl --retry 10 --retry-delay 1 --retry-connrefused -fsS http://app:8080/health >/dev/null')
+    if TRACK=='cyber':
+        for node in machines:
+            must(node,'iptables-restore < /run/assessment-fw.v4; ip6tables-restore < /run/assessment-fw.v6')
+            put(node,'/srv/assessment/advisories.md',(HERE/'SOURCES.md').read_text())
     for node, command in task['setup']:
         must(node, command)
 
@@ -199,7 +209,7 @@ def run(candidate, task):
         server.shutdown();server.server_close();shutil.rmtree(sockdir)
     checks={}
     for i,(node,command) in enumerate(task['checks'],1):
-        result=execute(node,command)
+        result=execute(node,strict_command(command))
         checks[f'acceptance_{i}']=result['returncode']==0 and not result['sensitive_output_blocked']
         assess.write(rd/f'check-{i}.json',json.dumps(result,indent=2))
     for node in machines:
@@ -225,18 +235,24 @@ def run(candidate, task):
 
 
 def main():
-    manifest={'driver':os.environ.get('HARNESS_OPERATIONS_DRIVER'),'executables':{n:shutil.which('pi' if n.startswith('pi-admin') else n) for n in CANDIDATES},'model':assess.MODEL,'candidates':CANDIDATES,'tasks':sorted(SELECT),'timeout':TIMEOUT,'run_credit_limit':RUN_LIMIT,'reset':'remote task baseline reset; candidate home and notes persist','hashes':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in HERE.glob('*.py')},'phase':'real-NixOS-operations-development-assessment','pi_source':os.environ['HARNESS_PI_SOURCE'],'pi_baseline':os.environ['HARNESS_PI_BASELINE']}
+    manifest={'track':TRACK,'source_packet_sha256':hashlib.sha256((HERE/'SOURCES.md').read_bytes()).hexdigest() if TRACK=='cyber' else None,'driver':os.environ.get('HARNESS_OPERATIONS_DRIVER'),'executables':{n:shutil.which('pi' if n.startswith('pi-admin') else n) for n in CANDIDATES},'model':assess.MODEL,'candidates':CANDIDATES,'tasks':sorted(SELECT),'timeout':TIMEOUT,'run_credit_limit':RUN_LIMIT,'reset':'remote task baseline reset; candidate home and notes persist','hashes':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in HERE.glob('*.py')},'phase':'real-NixOS-operations-development-assessment','pi_source':os.environ['HARNESS_PI_SOURCE'],'pi_baseline':os.environ['HARNESS_PI_BASELINE']}
     assess.write(ROOT/'manifest.json',json.dumps(manifest,indent=2))
     for node in machines:
         must(node,'test "$(uname -s)" = Linux; test -e /etc/NIXOS; test ! -e /home/cristian; ! timeout 3 bash -c "echo >/dev/tcp/192.168.40.15/22"')
+    if TRACK=='cyber':
+        for node in machines:must(node,'iptables-save > /run/assessment-fw.v4; ip6tables-save > /run/assessment-fw.v6')
     must('app','podman load -i /etc/lab/python-image.tar >/dev/null')
     if os.environ.get('HARNESS_OPERATIONS_VALIDATE')=='1':
         from reference import REFERENCE
+        if TRACK=='cyber':
+            from cyber import REFERENCE
         controls=[]
         for task in TASKS:
             if task['id'] not in SELECT:continue
             reset(task)
-            negative=[execute(node,command)['returncode']==0 for node,command in task['checks']]
+            negative_results=[execute(node,strict_command(command)) for node,command in task['checks']]
+            assess.write(ROOT/f'control-{task["id"]}-negative.json',json.dumps(negative_results,indent=2))
+            negative=[r['returncode']==0 and not r['sensitive_output_blocked'] for r in negative_results]
             if all(negative):raise RuntimeError('negative control already passes task '+str(task['id']))
             if task['id'] in REFERENCE:
                 # Reset again because some independent checks perform writes.
@@ -246,7 +262,9 @@ def main():
                         key=must('admin','cat /root/.config/assessment/'+command+'.pub')
                         put('app','/root/.ssh/authorized_keys',key)
                     else:must(node,command)
-                positive=[execute(node,command)['returncode']==0 for node,command in task['checks']]
+                positive_results=[execute(node,strict_command(command)) for node,command in task['checks']]
+                assess.write(ROOT/f'control-{task["id"]}-positive.json',json.dumps(positive_results,indent=2))
+                positive=[r['returncode']==0 and not r['sensitive_output_blocked'] for r in positive_results]
                 if not all(positive):raise RuntimeError('positive control fails task '+str(task['id']))
             controls.append({'task':task['id'],'negative_rejected':True,'positive_verified':task['id'] in REFERENCE})
             assess.write(ROOT/'controls.json',json.dumps(controls,indent=2))
