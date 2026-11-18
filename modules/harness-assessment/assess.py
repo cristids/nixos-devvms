@@ -170,7 +170,7 @@ def _configure_basic(name, home, prompt, source):
         import shlex
         setup=['letta','--backend','local','connect','openai-compatible','--base-url',base,'--api-key','assessment-dummy']
         command=['letta','--backend','local','--model','openai-compatible/'+MODEL,'--toolset','letta','--no-mods','--permission-mode','bypassPermissions','--skills','/home/agent/.agents/skills','--output-format','stream-json','-p']
-        return ['bash','-c',shlex.join(setup)+' >/dev/null && exec '+shlex.join(command)+' "$@"','letta-assessment',prompt],env
+        return ['bash','-c',shlex.join(setup)+' >/dev/null && exec '+shlex.join(['python3',str(Path(__file__).with_name('letta_session.py')),*command])+' "$@"','letta-assessment',prompt],env
     if name=='omp':
         ad=home/'.omp/agent'
         write(ad/'models.yml',json.dumps({'providers':{'assessment':{'baseUrl':base,'api':'openai-completions','apiKey':'assessment-dummy','compat':{'supportsDeveloperRole':False,'supportsStore':False,'supportsReasoningEffort':False,'maxTokensField':'max_tokens'},'models':[{'id':m,'contextWindow':128000,'maxTokens':8192} for m in dict.fromkeys([MODEL,REVIEW_MODEL])]}}}))
