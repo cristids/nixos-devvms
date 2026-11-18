@@ -52,4 +52,26 @@ class BrokerBoundary(unittest.TestCase):
                 self.assertEqual(request('POST','/v1/chat/completions',json.dumps({'model':'unapproved-model'}))[0],403)
             finally:server.shutdown();server.server_close()
 
+class ProviderAvailability(unittest.TestCase):
+    def test_503_recovers_with_bounded_backoff(self):
+        from unittest.mock import patch
+        from urllib.error import HTTPError
+        metrics=assess.collections.Counter(); response=object()
+        with patch.object(assess.urllib.request,'urlopen',side_effect=[HTTPError('http://test',503,'Unavailable',{},None),response]) as call, patch.object(assess.time,'sleep') as sleep:
+            self.assertIs(assess.open_model_request(object(),metrics),response)
+            self.assertEqual(call.call_count,2);sleep.assert_called_once_with(2)
+            self.assertEqual(metrics['upstream_503'],1)
+    def test_persistent_503_stops_and_auth_error_is_not_retried(self):
+        from unittest.mock import patch
+        from urllib.error import HTTPError
+        for code, attempts in [(503,4),(401,1)]:
+            metrics=assess.collections.Counter()
+            with patch.object(assess.urllib.request,'urlopen',side_effect=lambda *a,**k: (_ for _ in ()).throw(HTTPError('http://test',code,'error',{},None))) as call, patch.object(assess.time,'sleep'):
+                with self.assertRaises(HTTPError):assess.open_model_request(object(),metrics)
+                self.assertEqual(call.call_count,attempts)
+    def test_provider_failure_does_not_become_harness_failure(self):
+        self.assertEqual(assess.assessment_grade('runtime_failure',{'functional':False},True),'not_scored')
+        self.assertEqual(assess.assessment_grade('completed',{'functional':True},True),'pass')
+        self.assertEqual(assess.assessment_grade('completed',{'functional':False},False),'fail')
+
 if __name__=='__main__':unittest.main()

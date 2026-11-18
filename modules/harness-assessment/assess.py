@@ -98,6 +98,33 @@ class UnixHTTP(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads=True
 
 
+def open_model_request(request, metrics):
+    """Retry only explicit upstream503 responses, never a partially streamed reply."""
+    for attempt in range(4):
+        metrics['upstream_attempts'] += 1
+        try:
+            return urllib.request.urlopen(request, timeout=180)
+        except urllib.error.HTTPError as error:
+            if error.code != 503:
+                raise
+            metrics['upstream_503'] += 1
+            if attempt == 3:
+                metrics['upstream_503_exhausted'] += 1
+                raise
+            error.close()
+            delay = 2 ** (attempt + 1)
+            metrics['upstream_retry_wait_seconds'] += delay
+            time.sleep(delay)
+
+
+def assessment_grade(status, checks, provider_unavailable=False):
+    if status == 'completed' and all(checks.values()):
+        return 'pass'
+    if provider_unavailable:
+        return 'not_scored'
+    return 'fail'
+
+
 class Broker(http.server.BaseHTTPRequestHandler):
     def log_message(self,*args): pass
     def send(self,status,body,ctype='application/json'):
@@ -122,7 +149,7 @@ class Broker(http.server.BaseHTTPRequestHandler):
                 return self.send(403,'{"error":"model not allowed"}')
             self.server.metrics['model_calls']+=1
             req=urllib.request.Request(self.server.upstream,data=body,headers={'Content-Type':'application/json'})
-            with urllib.request.urlopen(req, timeout=180) as r:
+            with open_model_request(req, self.server.metrics) as r:
                 self.send_response(r.status);self.send_header('Content-Type',r.headers.get('Content-Type','application/json'));self.end_headers()
                 while chunk:=r.read1(65536):self.wfile.write(chunk);self.wfile.flush()
         except urllib.error.HTTPError as e: self.send(e.code,e.read().decode(errors='replace'))

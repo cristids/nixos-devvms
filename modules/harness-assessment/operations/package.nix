@@ -9,7 +9,9 @@ let
   driver = (import ./lab.nix { inherit pkgs; }).driver;
   checks = pkgs.runCommand "harness-operations-unit-tests" { nativeBuildInputs = [ pkgs.python3 pkgs.strace pkgs.bash pkgs.coreutils ]; } ''
     cp ${./.}/*.py .
-    python3 -m unittest test_operations
+    cp ${../assess.py} assess.py
+    cp ${../test_assess.py} test_assess.py
+    python3 -m unittest test_operations test_assess
     touch $out
   '';
 in pkgs.writeShellApplication {

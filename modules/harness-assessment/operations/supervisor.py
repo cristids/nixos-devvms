@@ -166,7 +166,7 @@ class LabBroker(assess.Broker):
                         connection.close()
                 else:
                     req = urllib.request.Request(self.server.upstream,data=json.dumps(request).encode(),headers={'Content-Type':'application/json'})
-                    with urllib.request.urlopen(req,timeout=120) as r:
+                    with assess.open_model_request(req,self.server.metrics) as r:
                         payload = json.load(r)
                 answer = payload['choices'][0]['message']['content'].strip()
                 if answer.startswith('```'):
@@ -254,7 +254,11 @@ def run(candidate, task):
             try:rows.append(json.loads(line))
             except ValueError:pass
     if any(r.get('status')==402 for r in rows):status='cap_hit'
-    result={'candidate':candidate,'task':task['id'],'title':task['title'],'area':task['area'],'status':status,'returncode':rc,'checks':checks,'metrics':dict(server.metrics),'seconds':round(time.monotonic()-started,2),'credits':round(sum(float(r.get('credits') or 0) for r in rows),6),'prompt_tokens':sum((r.get('usage') or {}).get('prompt_tokens',0) for r in rows),'completion_tokens':sum((r.get('usage') or {}).get('completion_tokens',0) for r in rows),'grade':'pass' if status=='completed' and all(checks.values()) else 'fail'}
+    provider_unavailable = bool(server.metrics['upstream_503']) or any(r.get('status') == 503 for r in rows)
+    original_status = status
+    grade = assess.assessment_grade(status, checks, provider_unavailable)
+    if grade == 'not_scored':status = 'provider_unavailable'
+    result={'candidate':candidate,'task':task['id'],'title':task['title'],'area':task['area'],'status':status,'returncode':rc,'checks':checks,'metrics':dict(server.metrics),'seconds':round(time.monotonic()-started,2),'credits':round(sum(float(r.get('credits') or 0) for r in rows),6),'prompt_tokens':sum((r.get('usage') or {}).get('prompt_tokens',0) for r in rows),'completion_tokens':sum((r.get('usage') or {}).get('completion_tokens',0) for r in rows),'grade':grade,'provider_unavailable_observed':provider_unavailable,'execution_status':original_status}
     assess.write(rd/'result.json',json.dumps(result,indent=2));print(json.dumps(result),flush=True)
     return result
 
