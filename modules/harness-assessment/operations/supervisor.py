@@ -180,7 +180,10 @@ def run(candidate, task):
     work=rd/'work';work.mkdir(exist_ok=True)
     shutil.copy(HERE/'labctl.py',work/'labctl.py')
     notes=ROOT/f'notes-{candidate}';notes.mkdir(exist_ok=True)
-    shutil.copytree(notes,work/'notes',dirs_exist_ok=True)
+    if task.get('native_only'):
+        (work/'notes').mkdir()
+    else:
+        shutil.copytree(notes,work/'notes',dirs_exist_ok=True)
     assess.write(work/'AGENTS.md',POLICY)
     prompt=POLICY+'\nTASK '+str(task['id'])+': '+task['title']+'\n'+task['prompt']
     source=os.environ['HARNESS_PI_BASELINE' if candidate=='pi-admin-before' else 'HARNESS_PI_SOURCE']

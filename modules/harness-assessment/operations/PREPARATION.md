@@ -119,3 +119,9 @@ Validate actual lesson capture/retrieval before declaring this profile ready.
 HarnessEvolve informs diagnosis, transferable lessons and regression checks; it
 is not a prescribed architecture. Keep native learning and external coaching
 separate, with fresh variants and permanent security regression checks.
+
+Practice104 deliberately starts with empty portable notes while preserving the
+native home. Its runtime grade alone does not certify native retrieval: inspect
+the native tool results and source artifacts, not just the agent's self-report.
+OMP initial practice recovered via portable notes after memory://root was not yet
+available; creating a managed skill is not proof that it was retrieved later.
