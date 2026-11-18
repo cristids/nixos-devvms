@@ -125,3 +125,10 @@ native home. Its runtime grade alone does not certify native retrieval: inspect
 the native tool results and source artifacts, not just the agent's self-report.
 OMP initial practice recovered via portable notes after memory://root was not yet
 available; creating a managed skill is not proof that it was retrieved later.
+
+OMP local consolidation normally ignores sessions idle for less than 12 hours.
+For the short practice curriculum, minRolloutIdleHours is explicitly zero and
+stage1Concurrency is one. Record this coaching configuration; do not interpret
+the previous missing memory artifact as absent native memory support. Letta's
+--memfs flag requires remoteMemfs; the local backend must use its automatic
+localMemfs path without that remote-only flag.

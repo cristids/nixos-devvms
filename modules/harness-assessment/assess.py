@@ -148,12 +148,12 @@ def _configure_basic(name, home, prompt, source):
         # This is only the broker's dummy credential, never the provider key.
         import shlex
         setup=['letta','--backend','local','connect','openai-compatible','--base-url',base,'--api-key','assessment-dummy']
-        command=['letta','--backend','local','--model','openai-compatible/'+MODEL,'--toolset','letta','--memfs','--no-mods','--permission-mode','bypassPermissions','--skills','/home/agent/.agents/skills','--output-format','stream-json','-p']
+        command=['letta','--backend','local','--model','openai-compatible/'+MODEL,'--toolset','letta','--no-mods','--permission-mode','bypassPermissions','--skills','/home/agent/.agents/skills','--output-format','stream-json','-p']
         return ['bash','-c',shlex.join(setup)+' >/dev/null && exec '+shlex.join(command)+' "$@"','letta-assessment',prompt],env
     if name=='omp':
         ad=home/'.omp/agent'
         write(ad/'models.yml',json.dumps({'providers':{'assessment':{'baseUrl':base,'api':'openai-completions','apiKey':'assessment-dummy','compat':{'supportsDeveloperRole':False,'supportsStore':False,'supportsReasoningEffort':False,'maxTokensField':'max_tokens'},'models':[{'id':m,'contextWindow':128000,'maxTokens':8192} for m in dict.fromkeys([MODEL,REVIEW_MODEL])]}}}))
-        write(ad/'config.yml',json.dumps({'modelRoles':{'default':'assessment/'+MODEL,'smol':'assessment/'+MODEL,'slow':'assessment/'+REVIEW_MODEL,'plan':'assessment/'+REVIEW_MODEL},'memory':{'backend':'local'},'autolearn':{'enabled':True}}))
+        write(ad/'config.yml',json.dumps({'modelRoles':{'default':'assessment/'+MODEL,'smol':'assessment/'+MODEL,'slow':'assessment/'+REVIEW_MODEL,'plan':'assessment/'+REVIEW_MODEL},'memory':{'backend':'local'},'memories':{'minRolloutIdleHours':0,'stage1Concurrency':1},'autolearn':{'enabled':True}}))
         env.update(PI_CODING_AGENT_DIR='/home/agent/.omp/agent',PI_SKIP_VERSION_CHECK='1',PI_TELEMETRY='0')
         return ['omp','--model','assessment/'+MODEL,'--offline','--no-title','--no-extensions','--no-lsp','--no-pty','--tools','read,edit,write,bash,grep,glob,todo,learn,manage_skill','--mode','json','-p',prompt],env
     if name=='hermes':
