@@ -15,6 +15,8 @@ p.add_argument('--tasks')
 p.add_argument('--track',choices=['operations','cyber','practice'],default='operations')
 p.add_argument('--model', default='deepseek-v4.1-flash-1017')
 p.add_argument('--review-model', default='kimi-k3')
+p.add_argument('--purpose-review-model', choices=['claude-sonnet-5-5'])
+p.add_argument('--claude-review-socket', type=Path)
 p.add_argument('--ticket-credits', type=float, default=0.60)
 p.add_argument('--timeout',type=int,default=480)
 p.add_argument('--max-credits',type=float,default=20)
@@ -22,6 +24,8 @@ p.add_argument('--validate',action='store_true')
 p.add_argument('--background',action='store_true')
 p.add_argument('--report',action='store_true')
 a=p.parse_args()
+if a.purpose_review_model and (not a.claude_review_socket or not a.claude_review_socket.is_socket()):
+    p.error('Claude purpose review requires an existing private review socket')
 import math
 if not math.isfinite(a.ticket_credits) or a.ticket_credits <= 0:
     p.error('ticket-credits must be finite and positive')
@@ -53,6 +57,9 @@ a.root=a.root.resolve();a.root.mkdir(parents=True,exist_ok=False);a.root.chmod(0
 # Keep the path short enough for Unix sockets, regardless of run-root length.
 runtime=Path(tempfile.mkdtemp(prefix='ops-runtime-'))
 env=os.environ.copy()
+if a.purpose_review_model:
+    env['HARNESS_PURPOSE_REVIEW_MODEL']=a.purpose_review_model
+    env['HARNESS_CLAUDE_REVIEW_SOCKET']=str(a.claude_review_socket.resolve())
 env.update(HARNESS_SOLVER_MODEL=a.model, HARNESS_REVIEW_MODEL=a.review_model, HARNESS_TICKET_CREDITS=str(a.ticket_credits))
 env['XDG_RUNTIME_DIR']=str(runtime)
 env.update(HARNESS_OPERATIONS_TRACK=a.track,HARNESS_OPERATIONS_ROOT=str(a.root),HARNESS_OPERATIONS_CANDIDATES=','.join(a.candidates),HARNESS_OPERATIONS_TASKS=a.tasks,HARNESS_OPERATIONS_TIMEOUT=str(a.timeout),HARNESS_OPERATIONS_MAX_CREDITS=str(a.max_credits),HARNESS_OPERATIONS_VALIDATE='1' if a.validate else '0',HARNESS_OPERATIONS_SUPERVISOR=str(Path(__file__).parent/'supervisor.py'))

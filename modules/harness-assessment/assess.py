@@ -88,7 +88,7 @@ def sandbox_base(work, home):
     home.mkdir(parents=True,exist_ok=True)
     return ['bwrap','--die-with-parent','--new-session','--unshare-all','--ro-bind','/nix/store','/nix/store',
       '--ro-bind','/run/current-system/sw','/run/current-system/sw','--proc','/proc','--dev','/dev',
-      '--tmpfs','/tmp','--dir','/run/dbus','--dir',f'/run/user/{os.getuid()}','--dir','/bin','--ro-bind',shutil.which('bash'),'/bin/sh','--ro-bind',shutil.which('bash'),'/bin/bash','--dir','/etc','--ro-bind','/etc/ssl','/etc/ssl',
+      '--tmpfs','/tmp','--dir','/usr/bin','--ro-bind',shutil.which('env'),'/usr/bin/env','--dir','/run/dbus','--dir',f'/run/user/{os.getuid()}','--dir','/bin','--ro-bind',shutil.which('bash'),'/bin/sh','--ro-bind',shutil.which('bash'),'/bin/bash','--dir','/etc','--ro-bind','/etc/ssl','/etc/ssl',
       '--bind',str(work),'/work','--bind',str(home),'/home/agent','--chdir','/work',
       '--clearenv','--setenv','USER','agent','--setenv','HOME','/home/agent','--setenv','PATH',os.environ['PATH'],
       '--setenv','LANG','C.UTF-8','--setenv','TERM','dumb','--setenv','SSL_CERT_FILE',os.path.realpath('/etc/ssl/certs/ca-certificates.crt')]

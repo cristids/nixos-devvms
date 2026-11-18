@@ -132,3 +132,27 @@ stage1Concurrency is one. Record this coaching configuration; do not interpret
 the previous missing memory artifact as absent native memory support. Letta's
 --memfs flag requires remoteMemfs; the local backend must use its automatic
 localMemfs path without that remote-only flag.
+
+## Claude purpose-review bridge
+
+`harness-claude-review` runs on the credential source host with a private Unix
+socket and metadata-only ledger. Forward that socket through authenticated SSH
+to a private devhobby socket; the candidate namespace never receives it.
+`--purpose-review-model claude-sonnet-5-5 --claude-review-socket PATH` selects
+this route for labctl purpose review only. Native harness reviewer/model roles
+remain those selected by --review-model; this does not advertise Claude as a
+Melious model or change the main solver.
+
+The bridge accepts only a bounded, nonstreaming two-message Sonnet request,
+without tools, arbitrary headers, endpoints or model choice. It rejects the
+synthetic business-record marker, caps admitted requests per run and uses a
+separate USD ceiling. The default USD10 ceiling is a local operational guard,
+not the superseded assessment-wide EUR60 cap. Its ledger records admission,
+status, token usage and estimated USD, never message text or credentials.
+
+This first integration uses Anthropic's official OpenAI-compatible endpoint.
+Prompt caching is unavailable and system messages are hoisted; do not represent
+it as a fully tuned native-Claude solver configuration. Rates checked against
+https://platform.claude.com/docs/en/models/overview on 2026-11-18: Sonnet5.5
+USD2 input/USD10 output per million tokens. Report this estimate separately from
+Melious credits and reconcile with provider billing.
