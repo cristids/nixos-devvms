@@ -120,7 +120,7 @@ def open_model_request(request, metrics):
 def assessment_grade(status, checks, provider_unavailable=False):
     if status == 'completed' and all(checks.values()):
         return 'pass'
-    if provider_unavailable:
+    if provider_unavailable or status == 'cap_hit':
         return 'not_scored'
     return 'fail'
 

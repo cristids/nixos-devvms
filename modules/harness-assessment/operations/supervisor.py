@@ -211,7 +211,7 @@ def run(candidate, task):
     cmd,env=assess.configure(candidate,home,prompt,source,prepared=TRACK=='practice')
     if candidate=='hermes':cmd[cmd.index('--max-turns')+1]='60'
     pd=Path.home()/'bakeoff/runs'/rid;pd.mkdir(parents=True,exist_ok=True)
-    assess.write(pd/'max_credits',os.environ.get('HARNESS_TICKET_CREDITS','0.60'));assess.write(pd/'max_calls','60')
+    assess.write(pd/'max_credits',os.environ.get('HARNESS_TICKET_CREDITS','0.60'));assess.write(pd/'max_calls',os.environ.get('HARNESS_TICKET_CALLS','60'))
     urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:5099/admit/'+rid,data=b''),timeout=10).close()
     sockdir=Path(tempfile.mkdtemp(prefix='opsbroker-'))
     server=assess.UnixHTTP(str(sockdir/'model.sock'),LabBroker)
@@ -265,7 +265,7 @@ def run(candidate, task):
     provider_unavailable = bool(server.metrics['upstream_503']) or any(r.get('status') == 503 for r in rows)
     original_status = status
     grade = assess.assessment_grade(status, checks, provider_unavailable)
-    if grade == 'not_scored':status = 'provider_unavailable'
+    if grade == 'not_scored' and provider_unavailable:status = 'provider_unavailable'
     if task['area']=='delegation' and not provider_unavailable:
         grade='not_scored';status='native_trace_review_required'
     result={'candidate':candidate,'task':task['id'],'title':task['title'],'area':task['area'],'status':status,'returncode':rc,'checks':checks,'metrics':dict(server.metrics),'seconds':round(time.monotonic()-started,2),'credits':round(sum(float(r.get('credits') or 0) for r in rows),6),'prompt_tokens':sum((r.get('usage') or {}).get('prompt_tokens',0) for r in rows),'completion_tokens':sum((r.get('usage') or {}).get('completion_tokens',0) for r in rows),'grade':grade,'provider_unavailable_observed':provider_unavailable,'execution_status':original_status}
@@ -274,7 +274,7 @@ def run(candidate, task):
 
 
 def main():
-    manifest={'track':TRACK,'source_packet_sha256':hashlib.sha256((HERE/'SOURCES.md').read_bytes()).hexdigest() if TRACK=='cyber' else None,'driver':os.environ.get('HARNESS_OPERATIONS_DRIVER'),'executables':{n:shutil.which('pi' if n.startswith('pi-admin') else n) for n in CANDIDATES},'model':assess.MODEL,'review_model':assess.REVIEW_MODEL,'purpose_review_model':PURPOSE_REVIEW_MODEL,'purpose_review_route':'private Claude bridge' if PURPOSE_REVIEW_MODEL.startswith('claude-') else 'Melious','provider_route':'melious via isolated broker','ticket_credit_limit':float(os.environ.get('HARNESS_TICKET_CREDITS','0.60')),'candidates':CANDIDATES,'tasks':sorted(SELECT),'timeout':TIMEOUT,'run_credit_limit':RUN_LIMIT,'reset':'remote task baseline reset; candidate home and notes persist','hashes':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in [*HERE.glob('*.py'),HERE.parent/'assess.py',HERE.parent/'native_profiles.py']},'phase':'native-profile-practice' if TRACK=='practice' else 'real-NixOS-operations-development-assessment','pi_source':os.environ['HARNESS_PI_SOURCE'],'pi_baseline':os.environ['HARNESS_PI_BASELINE']}
+    manifest={'track':TRACK,'source_packet_sha256':hashlib.sha256((HERE/'SOURCES.md').read_bytes()).hexdigest() if TRACK=='cyber' else None,'driver':os.environ.get('HARNESS_OPERATIONS_DRIVER'),'executables':{n:shutil.which('pi' if n.startswith('pi-admin') else n) for n in CANDIDATES},'model':assess.MODEL,'review_model':assess.REVIEW_MODEL,'purpose_review_model':PURPOSE_REVIEW_MODEL,'purpose_review_route':'private Claude bridge' if PURPOSE_REVIEW_MODEL.startswith('claude-') else 'Melious','provider_route':'melious via isolated broker','ticket_call_limit':int(os.environ.get('HARNESS_TICKET_CALLS','60')),'ticket_credit_limit':float(os.environ.get('HARNESS_TICKET_CREDITS','0.60')),'candidates':CANDIDATES,'tasks':sorted(SELECT),'timeout':TIMEOUT,'run_credit_limit':RUN_LIMIT,'reset':'remote task baseline reset; candidate home and notes persist','hashes':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in [*HERE.glob('*.py'),HERE.parent/'assess.py',HERE.parent/'native_profiles.py']},'phase':'native-profile-practice' if TRACK=='practice' else 'real-NixOS-operations-development-assessment','pi_source':os.environ['HARNESS_PI_SOURCE'],'pi_baseline':os.environ['HARNESS_PI_BASELINE']}
     assess.write(ROOT/'manifest.json',json.dumps(manifest,indent=2))
     for node in machines:
         must(node,'test "$(uname -s)" = Linux; test -e /etc/NIXOS; test ! -e /home/cristian; ! timeout 3 bash -c "echo >/dev/tcp/192.168.40.15/22"')

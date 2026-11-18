@@ -73,5 +73,6 @@ class ProviderAvailability(unittest.TestCase):
         self.assertEqual(assess.assessment_grade('runtime_failure',{'functional':False},True),'not_scored')
         self.assertEqual(assess.assessment_grade('completed',{'functional':True},True),'pass')
         self.assertEqual(assess.assessment_grade('completed',{'functional':False},False),'fail')
+        self.assertEqual(assess.assessment_grade('cap_hit',{'functional':False},False),'not_scored')
 
 if __name__=='__main__':unittest.main()
