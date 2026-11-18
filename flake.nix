@@ -125,6 +125,7 @@
 
       # Exposed for hash-bump iteration / tests: `nix build path:.#openspec`.
       packages.${system} = {
+        letta-code = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/letta-code { };
         harness-operations = import ./modules/harness-assessment/operations/package.nix {
           pkgs = nixpkgs.legacyPackages.${system};
           piSource = pi-admin.outPath;
