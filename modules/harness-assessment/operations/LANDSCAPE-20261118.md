@@ -125,3 +125,15 @@ verified devhobby results. Preserve separate evidence for capture, cross-session
 retrieval, successful reuse, changed prerequisites, and regression-free promotion.
 
 Paseo is the integration target. Herdr in the supplied report is historical/source context only.
+
+## Stable CLI release check, 2026-11-18 continuation
+
+GitHub release lists identify Qwen Code **v0.28.0**, Prime Agent **v0.10.5**,
+and Deep Agents Code **deepagents-code==0.2.11** as their current stable CLI
+releases. Qwen SDK/desktop tags and the Deep Agents library tag are different
+components and must not substitute for the terminal harness version.
+OpenClaw2026.11.5 and Letta Code0.34.65 are now packaged and in native practice;
+this is preparation progress, not evidence that the remaining candidates failed.
+Qwen Code0.28.0's published npm entry is `cli-entry.js` (different from the
+source package manifest). Use Node26.13.1: its CLI warns of excessive transient
+shell-safety memory usage on Node24 and recommends at least26.12.1.
