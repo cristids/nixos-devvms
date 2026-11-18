@@ -97,6 +97,7 @@
           vibePkg = vibe.packages.${system}.default;
           piAdminSource = pi-admin.outPath;
           piAdminBaseline = pi-admin-baseline.outPath;
+          operationsPkg = self.packages.${system}.harness-operations;
           piAdminLean = pi-admin.lib.leanCoding; # lean-coding skill, single source (pi-admin + pi-task)
         };
         modules = [
@@ -124,6 +125,16 @@
 
       # Exposed for hash-bump iteration / tests: `nix build path:.#openspec`.
       packages.${system} = {
+        harness-operations = import ./modules/harness-assessment/operations/package.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+          piSource = pi-admin.outPath;
+          piBaseline = pi-admin-baseline.outPath;
+          hermes = hermes.packages.${system}.minimal;
+          vibe = vibe.packages.${system}.default;
+        };
+        harness-operations-driver = (import ./modules/harness-assessment/operations/lab.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+        }).driver;
         openspec =
           nixpkgs.legacyPackages.${system}.callPackage ./pkgs/openspec { };
         # context7-mcp moved to pi-admin (pkgs/context7-mcp there, version in

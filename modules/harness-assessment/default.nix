@@ -1,4 +1,4 @@
-{ config, pkgs, hermesPkg, vibePkg, piAdminSource, piAdminBaseline, ... }:
+{ config, pkgs, hermesPkg, vibePkg, piAdminSource, piAdminBaseline, operationsPkg, ... }:
 let
   contenders = pkgs.callPackage ../../pkgs/harness-contenders { };
   piPkg = pkgs.callPackage ../../pkgs/pi-coding-agent { };
@@ -21,7 +21,7 @@ let
     '';
   };
 in {
-  environment.systemPackages = [ hermesPkg vibePkg contenders.opencode contenders.goose bench ];
+  environment.systemPackages = [ hermesPkg vibePkg contenders.opencode contenders.goose bench operationsPkg ];
   services.pi-admin = {
     enable = true;
     reviewer.hostDescription = "devhobby, an isolated synthetic harness assessment VM";
