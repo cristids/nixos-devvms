@@ -128,6 +128,7 @@
         harness-claude-review = import ./modules/harness-assessment/operations/claude-review.nix { pkgs = nixpkgs.legacyPackages.${system}; };
         letta-code = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/letta-code { };
         qwen-code = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/qwen-code { };
+        prime-agent = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/prime-agent { };
         openclaw-assessment = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/openclaw-assessment { };
         harness-operations = import ./modules/harness-assessment/operations/package.nix {
           pkgs = nixpkgs.legacyPackages.${system};
