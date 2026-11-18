@@ -1,6 +1,6 @@
 { lib, callPackage }:
 
-# pi 1.5.0 (@earendil-works/pi-coding-agent) + taskplane, the pi orchestration
+# pi 1.5.2 (@earendil-works/pi-coding-agent) + taskplane, the pi orchestration
 # extension, in ONE node_modules tree (bake-off 2026-11-05, devhobby). taskplane is
 # loaded as a local pi package from $out/lib/node_modules/taskplane (no runtime
 # `pi install npm:…`); it imports no pi module itself (pi maps its host packages for
@@ -10,7 +10,7 @@
 # wrapper satisfies. Telemetry/update checks off by default (PI_TELEMETRY=0,
 # PI_SKIP_VERSION_CHECK=1); the settings file also sets enableInstallTelemetry=false.
 let
-  piVersion = "1.5.0";
+  piVersion = "1.5.2";
   taskplaneVersion = "0.30.6";
 in
 (callPackage ../npm-global { }) {
@@ -21,8 +21,8 @@ in
     "taskplane@${taskplaneVersion}"
   ];
   npmFlags = [ "--legacy-peer-deps" ];
-  depsHash = "sha256-nTiFaWQvX8jGFEliIareOkywpqYO99lcIFK/mzUZDB0=";
-  resolveBefore = "2026-11-14";  # moves with depsHash only when this package is bumped
+  depsHash = "sha256-TnY8e9ud9DGvilnkIz86GAiv5Fm0HjQUEKCC2C7B7Z4=";
+  resolveBefore = "2026-11-18T16:30:00Z";  # moves with depsHash only when this package is bumped
   bins = {
     pi = "@earendil-works/pi-coding-agent/dist/bundle/cli.js";
     taskplane = "taskplane/bin/taskplane.mjs";

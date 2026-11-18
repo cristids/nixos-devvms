@@ -12,7 +12,7 @@
     # omp (can1357/oh-my-pi) — THE oh-my-pi, Can Bölük's fork of pi. Deliberately NO
     # nixpkgs follows: its build (rust-overlay + bun2nix) is pinned to its own inputs
     # and forcing our stable nixpkgs under it would just break the from-source build.
-    omp.url = "github:can1357/oh-my-pi";
+    omp.url = "github:can1357/oh-my-pi/v18.22.2";
 
     # herdr — terminal workspace manager for AI coding agents, run as a headless
     # per-user server so agent panes survive the ssh login that started them
@@ -131,6 +131,7 @@
           piBaseline = pi-admin-baseline.outPath;
           hermes = hermes.packages.${system}.minimal;
           vibe = vibe.packages.${system}.default;
+          omp = omp.packages.${system}.default;
         };
         harness-operations-driver = (import ./modules/harness-assessment/operations/lab.nix {
           pkgs = nixpkgs.legacyPackages.${system};

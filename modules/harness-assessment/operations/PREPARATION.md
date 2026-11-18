@@ -101,3 +101,21 @@ Use `--model glm-5.3 --review-model kimi-k3 --ticket-credits 3` for an explicit
 strong-model trial. These options are recorded in the manifest. Per-ticket and
 per-batch limits are operational guardrails, not the superseded EUR60 total cap.
 Changing a model creates a new profile/run; do not overwrite earlier results.
+
+## Upstream release policy
+
+Always select the latest stable release published upstream in Git, then package
+it in Nix. Neither Nix availability nor npm `latest` establishes stable status.
+Record release URL, Git revision and actual binary version before the run.
+Checked 2026-11-18: OMP18.22.2, Pi1.5.2, Hermes0.23.2, Vibe3.1.3,
+OpenCode1.19.6 and Goose1.60.1. DSH has only GitHub prereleases and is deferred
+from the stable series. Preserve previous runs; do not relabel their versions.
+
+OMP uses its local memory backend and opt-in autolearn with managed skills. Its
+profile restricts built-in tools and uses the same externally enforced private
+network/broker boundary. `--offline` is defense in depth, not a firewall.
+Validate actual lesson capture/retrieval before declaring this profile ready.
+
+HarnessEvolve informs diagnosis, transferable lessons and regression checks; it
+is not a prescribed architecture. Keep native learning and external coaching
+separate, with fresh variants and permanent security regression checks.

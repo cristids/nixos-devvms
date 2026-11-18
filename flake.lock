@@ -585,15 +585,16 @@
         "rust-overlay": "rust-overlay_3"
       },
       "locked": {
-        "lastModified": 1794620897,
-        "narHash": "sha256-s8gzUbIzNA8pQVwzil1mmvMRrLf76woqqLMugxNimEc=",
+        "lastModified": 1794963948,
+        "narHash": "sha256-kTiPoeS3hYBrjnzTvDRfWeWkqI8ruKslaDcARjEZPeE=",
         "owner": "can1357",
         "repo": "oh-my-pi",
-        "rev": "57263720c818ab3baaeb74bf415b03592b806ae0",
+        "rev": "e1ae2cc998efd1ca151b46ebefc0e0dab6c23c63",
         "type": "github"
       },
       "original": {
         "owner": "can1357",
+        "ref": "v18.22.2",
         "repo": "oh-my-pi",
         "type": "github"
       }
@@ -629,6 +630,22 @@
       },
       "original": {
         "ref": "main",
+        "type": "git",
+        "url": "ssh://git@github-pi-admin/cristids/pi-admin"
+      }
+    },
+    "pi-admin-baseline": {
+      "locked": {
+        "lastModified": 1794971942,
+        "narHash": "sha256-bHaWvbFSiPoco+5OcCAlwHZPyiQ4S8+ujRxVBCccwhM=",
+        "ref": "refs/heads/main",
+        "rev": "771121ffa0eb9da51c159656fa6201f32e62d81a",
+        "revCount": 42,
+        "type": "git",
+        "url": "ssh://git@github-pi-admin/cristids/pi-admin"
+      },
+      "original": {
+        "rev": "771121ffa0eb9da51c159656fa6201f32e62d81a",
         "type": "git",
         "url": "ssh://git@github-pi-admin/cristids/pi-admin"
       }
@@ -744,9 +761,9 @@
         "omp": "omp",
         "paseo": "paseo",
         "pi-admin": "pi-admin",
+        "pi-admin-baseline": "pi-admin-baseline",
         "tuios": "tuios",
-        "vibe": "vibe",
-        "pi-admin-baseline": "pi-admin-baseline"
+        "vibe": "vibe"
       }
     },
     "rust-overlay": {
@@ -1004,22 +1021,6 @@
         "ref": "v3.1.3",
         "repo": "mistral-vibe",
         "type": "github"
-      }
-    },
-    "pi-admin-baseline": {
-      "locked": {
-        "lastModified": 1794971942,
-        "narHash": "sha256-bHaWvbFSiPoco+5OcCAlwHZPyiQ4S8+ujRxVBCccwhM=",
-        "ref": "refs/heads/main",
-        "rev": "771121ffa0eb9da51c159656fa6201f32e62d81a",
-        "revCount": 42,
-        "type": "git",
-        "url": "ssh://git@github-pi-admin/cristids/pi-admin"
-      },
-      "original": {
-        "type": "git",
-        "url": "ssh://git@github-pi-admin/cristids/pi-admin",
-        "rev": "771121ffa0eb9da51c159656fa6201f32e62d81a"
       }
     }
   },

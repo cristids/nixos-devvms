@@ -25,7 +25,7 @@ omitting important alternatives.
 | OpenCode | Practical coding finalist | Installed; native profile/practice pending |
 | Goose | Reusable workflows and administration automation | Installed; preparation underway |
 | Mistral Vibe | Practical finalist with relevant reviewer design | Installed; native profile/practice pending |
-| DSH | Experimental isolated contender | Installed; native profile/practice pending; experimental status is not a benchmark failure |
+| DSH | Experimental isolated contender | Installed experimental version; no upstream stable GitHub release as of 2026-11-18; deferred from stable series, not a benchmark failure |
 | **Letta Code** | **Important memory-focused challenger, explicitly included for practical memory comparison** | **Missing from implemented test roster; assess local/private backend and add a practical trial or document a concrete blocker** |
 | **OpenClaw** | **Explicit original request; workspace and structured-memory reference** | **Architectural review exists, but no isolated practical comparison or explicit evidence-backed exclusion; resolve before final shortlist** |
 | Claude Code | Historical research mention | Explicitly excluded by user on 2026-11-18; Claude API remains authorized as a model provider for other harnesses |
