@@ -6,7 +6,7 @@
 {
   # Open-weight team bake-off (2026-11-05): pi 1.5 + taskplane, dsh, recording proxy,
   # sandboxed runners, throwaway Frappe benches. Data in ~/bakeoff, not in this repo.
-  imports = [ ../../modules/bakeoff ];
+  imports = [ ../../modules/bakeoff ../../modules/harness-assessment ../../modules/paseo.nix ];
 
   networking.hostName = "devhobby";
 

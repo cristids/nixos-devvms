@@ -76,10 +76,14 @@
     # Paseo (getpaseo/paseo) daemon on devpro (modules/paseo.nix). Same tag AND
     # lock rev as nixos_llm_srv (cdssrv02): no nixpkgs follows, so its own
     # nixpkgs builds it and the store path is identical on both hosts.
+    pi-admin-baseline.url = "git+ssh://git@github-pi-admin/cristids/pi-admin?rev=771121ffa0eb9da51c159656fa6201f32e62d81a";
+    hermes.url = "github:NousResearch/hermes-agent/v0.23.2";
+    vibe.url = "github:mistralai/mistral-vibe/v3.1.3";
+
     paseo.url = "github:getpaseo/paseo/v0.16.1";
   };
 
-  outputs = { self, nixpkgs, omp, herdr, tuios, emacs-overlay, emacs-31, emacs-tramp-rpc, pi-admin, paseo }:
+  outputs = { self, nixpkgs, omp, herdr, tuios, emacs-overlay, emacs-31, emacs-tramp-rpc, pi-admin, paseo, hermes, vibe, pi-admin-baseline }:
     let
       system = "x86_64-linux";
       mkVM = host: nixpkgs.lib.nixosSystem {
@@ -89,6 +93,10 @@
           herdrPkg = herdr.packages.${system}.default;
           tuiosPkg = tuios.packages.${system}.default;
           paseoPkg = paseo.packages.${system}.default;
+          hermesPkg = hermes.packages.${system}.minimal;
+          vibePkg = vibe.packages.${system}.default;
+          piAdminSource = pi-admin.outPath;
+          piAdminBaseline = pi-admin-baseline.outPath;
           piAdminLean = pi-admin.lib.leanCoding; # lean-coding skill, single source (pi-admin + pi-task)
         };
         modules = [
