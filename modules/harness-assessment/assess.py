@@ -147,7 +147,7 @@ def _configure_basic(name, home, prompt, source):
         write(ad/'models.yml',json.dumps({'providers':{'assessment':{'baseUrl':base,'api':'openai-completions','apiKey':'assessment-dummy','compat':{'supportsDeveloperRole':False,'supportsStore':False,'supportsReasoningEffort':False,'maxTokensField':'max_tokens'},'models':[{'id':m,'contextWindow':128000,'maxTokens':8192} for m in dict.fromkeys([MODEL,REVIEW_MODEL])]}}}))
         write(ad/'config.yml',json.dumps({'modelRoles':{'default':'assessment/'+MODEL,'smol':'assessment/'+MODEL,'slow':'assessment/'+REVIEW_MODEL,'plan':'assessment/'+REVIEW_MODEL},'memory':{'backend':'local'},'autolearn':{'enabled':True}}))
         env.update(PI_CODING_AGENT_DIR='/home/agent/.omp/agent',PI_SKIP_VERSION_CHECK='1',PI_TELEMETRY='0')
-        return ['omp','--model','assessment/'+MODEL,'--offline','--no-title','--no-extensions','--no-lsp','--no-pty','--tools','read,edit,write,bash,grep,glob,todo,learn,manage_skill,context_notes','--mode','json','-p',prompt],env
+        return ['omp','--model','assessment/'+MODEL,'--offline','--no-title','--no-extensions','--no-lsp','--no-pty','--tools','read,edit,write,bash,grep,glob,todo,learn,manage_skill','--mode','json','-p',prompt],env
     if name=='hermes':
         hd=home/'.hermes';hd.mkdir(exist_ok=True)
         write(hd/'config.yaml',json.dumps({'model':{'default':MODEL,'provider':'custom','base_url':base},'telemetry':{'shared_metrics':{'enabled':False,'send':False,'offer_version':2}},'terminal':{'backend':'local'},'checkpoints':{'enabled':False},'approvals':{'mode':'smart'}}))
