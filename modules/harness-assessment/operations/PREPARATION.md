@@ -37,6 +37,27 @@ old results. Never snapshot credentials into the profile or learning artifacts.
 
 ## Guided execution and interpretation
 
+Judge availability (user instruction 2026-11-19): a missing judge response holds
+the current ticket. Retry the same judge at 30/60/120/300/600/900 seconds, then
+every 900 seconds, without a default verdict or automatic model substitution.
+The controller blocks further model/guest requests while waiting and cannot
+advance even if the candidate exits. Judge waiting is excluded from the ticket
+execution deadline and recorded separately. A real negative verdict is a valid
+response, not an outage. Invalid purpose-review replies remain pending too.
+Native secondary-model streams are buffered until complete before delivery.
+
+`judge-availability.json` and `.jsonl` store only run/model/state/attempt/error
+category and timing metadata. Mattermost Sysadmin receives an initial alert,
+at most one reminder per 30 minutes, and recovery; notification failure remains
+visible locally and retries on subsequent failed judge attempts. Once accepted
+by the bridge, alerts are also queued durably and retried independently if
+Mattermost is unavailable, preserving failure/recovery order across restarts. The private
+alert bridge runs on cdssrv02 with existing Mattermost environment files; no bot
+credential is sent to devhobby or candidates. The alert socket is required for
+new assessment batches. Completed historical runs retain their old policy.
+Budget/auth/configuration errors also hold the ticket and are identified by
+HTTP status; waiting does not authorize bypassing a spending limit.
+
 Evaluate independent completion and supervised recovery separately. Guidance
 may explain an operational intention or diagnose a problem, but record its
 content, reason, timing and cost. Do not silently repair an agent's work and

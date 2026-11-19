@@ -18,6 +18,7 @@ p.add_argument('--model', default='deepseek-v4.1-flash-1017')
 p.add_argument('--review-model', default='kimi-k3')
 p.add_argument('--purpose-review-model', choices=['claude-sonnet-5-5'])
 p.add_argument('--claude-review-socket', type=Path)
+p.add_argument('--judge-alert-socket', type=Path, default=Path.home()/'.cache/harness-assessment/claude-review.sock')
 p.add_argument('--ticket-credits', type=float, default=0.60)
 p.add_argument('--timeout',type=int,default=480)
 p.add_argument('--ticket-calls',type=int,default=60)
@@ -39,6 +40,8 @@ if a.report:
     from report import report
     print(json.dumps(report(a.root),indent=2))
     raise SystemExit(0)
+if not a.validate and not a.judge_alert_socket.is_socket():
+    p.error('judge availability notifications require the private alert bridge socket')
 if len(a.candidates) != 1:
     p.error('use one candidate per invocation for independent guest state')
 from catalog import TASKS
@@ -66,6 +69,7 @@ if a.prepared_from:
 runtime=Path(tempfile.mkdtemp(prefix='ops-runtime-'))
 env=os.environ.copy()
 env['HARNESS_PREPARED_PROFILE']='1' if a.prepared_from else '0'
+env['HARNESS_JUDGE_ALERT_SOCKET']=str(a.judge_alert_socket.resolve())
 if a.purpose_review_model:
     env['HARNESS_PURPOSE_REVIEW_MODEL']=a.purpose_review_model
     env['HARNESS_CLAUDE_REVIEW_SOCKET']=str(a.claude_review_socket.resolve())

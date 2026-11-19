@@ -12,9 +12,10 @@ e.add_argument('command', help='One quoted shell command; use heredocs for file 
 r = s.add_parser('review')
 r.add_argument('purpose', help='Purpose, necessity, scope and proposed command')
 a = vars(p.parse_args())
+timeout = None if a['operation'] == 'review' else 180
 req = urllib.request.Request('http://127.0.0.1:5099/lab/' + a.pop('operation'),
                              data=json.dumps(a).encode(), headers={'Content-Type': 'application/json'})
-with urllib.request.urlopen(req, timeout=180) as response:
+with urllib.request.urlopen(req, timeout=timeout) as response:
     result = json.load(response)
 print(json.dumps(result))
 raise SystemExit(result.get('returncode', 0))

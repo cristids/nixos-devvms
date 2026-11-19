@@ -71,6 +71,16 @@ repetitions; 50 easy successes alone do not establish a winner.
 
 ## Credentials and review
 
+Judge API unavailability holds the current ticket rather than assigning a verdict
+or moving on. The same judge is retried at 30s, 1m, 2m, 5m, 10m, then every 15m.
+The controller pauses the execution deadline and blocks further guest/model
+requests while waiting, including when a CLI's own tool timeout expires. Local
+availability records distinguish provider wait from harness execution. Sysadmin
+Mattermost receives an initial alert, a reminder no more often than 30 minutes,
+and recovery through the private alert bridge. See PREPARATION.md for scope and
+limits. This policy applies to new runner versions, not historical results or
+the separately installed production pi-admin gate/tuner.
+
 These are functional credentials generated for isolated infrastructure, not
 production credentials. Private keys and passwords stay in 0600 files under
 `/root/.config/assessment/` in the relevant guest. SSH/SCP, Podman secrets and TLS

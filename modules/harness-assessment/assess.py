@@ -150,7 +150,8 @@ class Broker(http.server.BaseHTTPRequestHandler):
             self.server.metrics['model_calls']+=1
             self.server.metrics['model_calls:'+obj['model']]+=1
             req=urllib.request.Request(self.server.upstream,data=body,headers={'Content-Type':'application/json'})
-            with open_model_request(req, self.server.metrics) as r:
+            opener = getattr(self.server, 'judge_open', None) if obj['model'] == REVIEW_MODEL else None
+            with (opener(req) if opener else open_model_request(req, self.server.metrics)) as r:
                 self.send_response(r.status);self.send_header('Content-Type',r.headers.get('Content-Type','application/json'));self.end_headers()
                 while chunk:=r.read1(65536):self.wfile.write(chunk);self.wfile.flush()
         except urllib.error.HTTPError as e: self.send(e.code,e.read().decode(errors='replace'))

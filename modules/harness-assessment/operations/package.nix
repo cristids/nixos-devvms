@@ -15,7 +15,7 @@ let
     cp ${./.}/*.py .
     cp ${../assess.py} assess.py
     cp ${../test_assess.py} test_assess.py
-    python3 -m unittest test_operations test_assess
+    python3 -m unittest test_operations test_assess test_judge_availability
     touch $out
   '';
 in pkgs.writeShellApplication {
