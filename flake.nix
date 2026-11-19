@@ -12,7 +12,7 @@
     # omp (can1357/oh-my-pi) — THE oh-my-pi, Can Bölük's fork of pi. Deliberately NO
     # nixpkgs follows: its build (rust-overlay + bun2nix) is pinned to its own inputs
     # and forcing our stable nixpkgs under it would just break the from-source build.
-    omp.url = "github:can1357/oh-my-pi/v18.22.2";
+    omp.url = "github:can1357/oh-my-pi/v19.0.0";
 
     # herdr — terminal workspace manager for AI coding agents, run as a headless
     # per-user server so agent panes survive the ssh login that started them
