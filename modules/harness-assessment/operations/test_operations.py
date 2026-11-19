@@ -16,6 +16,31 @@ spec=importlib.util.spec_from_file_location('guard',Path(__file__).with_name('ex
 guard=importlib.util.module_from_spec(spec);spec.loader.exec_module(guard)
 
 class OperationsTests(unittest.TestCase):
+    def test_prepared_snapshot_isolated_copy_and_link_rejection(self):
+        from prepared_snapshot import snapshot
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); source=root/'source'; source.mkdir()
+            (source/'manifest.json').write_text(json.dumps({'phase':'native-profile-practice','candidates':['deepagents']}))
+            (source/'process.json').write_text(json.dumps({'pid':2147483647}))
+            home=source/'home-deepagents';home.mkdir()
+            (source/'notes-deepagents').mkdir()
+            (home/'memory').write_text('validated procedure')
+            dest=root/'copy';dest.mkdir()
+            record=snapshot(source,dest,'deepagents')
+            self.assertEqual(len(record['files']),1)
+            (dest/'home-deepagents/memory').write_text('new lesson')
+            self.assertEqual((home/'memory').read_text(),'validated procedure')
+            (home/'escape').symlink_to('/etc/passwd')
+            dest2=root/'reject';dest2.mkdir()
+            with self.assertRaisesRegex(ValueError,'link or special file'):
+                snapshot(source,dest2,'deepagents')
+            self.assertFalse((dest2/'home-deepagents/escape').exists())
+            with self.assertRaisesRegex(ValueError,'same candidate'):
+                snapshot(source,dest2,'prime')
+            (source/'process.json').write_text(json.dumps({'pid':os.getpid()}))
+            with self.assertRaisesRegex(ValueError,'still exists'):
+                snapshot(source,dest2,'deepagents')
+
     def test_catalog_has_fifty_distinct_tickets(self):
         self.assertEqual(list(range(1,51)),[t['id'] for t in TASKS])
         self.assertEqual(50,len({t['title'] for t in TASKS}))

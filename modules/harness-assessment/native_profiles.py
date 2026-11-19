@@ -47,7 +47,8 @@ def prepare(name, home, command, env):
     home=Path(home)
     skill=home/SKILL_DIRS[name]/'assessment-operations/SKILL.md'
     skill.parent.mkdir(parents=True,exist_ok=True)
-    skill.write_text(SKILL)
+    if not skill.exists():
+        skill.write_text(SKILL)
     if name=='prime':
         command=list(command)
         command[-1]+='\nPRIME PRINT-MODE PREPARATION: This one-shot CLI exits after your final response. Explicitly await all asynchronous command/verification handles and save every requested artifact before finalizing; ending with a promise to wait for a future notification cannot complete the task. Use durable cross-session harness memory for procedures meant to survive new sessions; session-local state alone is not cross-session learning.'

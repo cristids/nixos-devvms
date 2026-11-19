@@ -12,6 +12,7 @@ p=argparse.ArgumentParser()
 p.add_argument('--root',type=Path,required=True)
 p.add_argument('--candidates',nargs='+',default=['pi-admin'],choices=['pi-admin-before','pi-admin','hermes','opencode','vibe','goose','dsh','omp','letta','openclaw','qwen','prime','deepagents'])
 p.add_argument('--tasks')
+p.add_argument('--prepared-from',type=Path,help='inactive practice run whose home and notes are copied into this isolated run')
 p.add_argument('--track',choices=['operations','cyber','practice'],default='operations')
 p.add_argument('--model', default='deepseek-v4.1-flash-1017')
 p.add_argument('--review-model', default='kimi-k3')
@@ -54,12 +55,17 @@ try:
 except ValueError:
     p.error('tasks must be comma-separated ticket numbers in the selected track')
 a.root=a.root.resolve();a.root.mkdir(parents=True,exist_ok=False);a.root.chmod(0o700)
+if a.prepared_from:
+    if a.validate:p.error('prepared-from cannot be used for infrastructure controls')
+    from prepared_snapshot import snapshot
+    snapshot(a.prepared_from,a.root,a.candidates[0])
 (a.root/'vms').mkdir()
 # The test driver puts VLAN/control sockets directly in XDG_RUNTIME_DIR.
 # A shared login runtime directory collides across independent batches.
 # Keep the path short enough for Unix sockets, regardless of run-root length.
 runtime=Path(tempfile.mkdtemp(prefix='ops-runtime-'))
 env=os.environ.copy()
+env['HARNESS_PREPARED_PROFILE']='1' if a.prepared_from else '0'
 if a.purpose_review_model:
     env['HARNESS_PURPOSE_REVIEW_MODEL']=a.purpose_review_model
     env['HARNESS_CLAUDE_REVIEW_SOCKET']=str(a.claude_review_socket.resolve())

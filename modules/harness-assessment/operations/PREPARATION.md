@@ -156,3 +156,19 @@ it as a fully tuned native-Claude solver configuration. Rates checked against
 https://platform.claude.com/docs/en/models/overview on 2026-11-18: Sonnet5.5
 USD2 input/USD10 output per million tokens. Report this estimate separately from
 Melious credits and reconcile with provider billing.
+
+### Reusing a prepared profile in a separate batch
+
+Use `--prepared-from /absolute/path/to/completed-practice-run` when starting
+security or operations checks after preparation. The launcher requires the same
+candidate, a practice manifest and an inactive source driver. It copies the
+native home and portable notes into the new run; it never shares writable state.
+Symlinks and special files are rejected rather than followed. The source
+manifest hash and every copied file hash are saved in `prepared-snapshot.json`
+and included in the run manifest. Existing learned skill text is preserved when
+reapplying the native configuration and coaching.
+
+This is preparation provenance, not a claim that copied memories are trustworthy.
+Poisoning and stale-memory challenges still require independent tests. Prior
+security batches that started with fresh homes remain limited controls and do
+not establish performance with the learned profile.
