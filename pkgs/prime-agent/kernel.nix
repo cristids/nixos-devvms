@@ -87,6 +87,96 @@ let
         dependencies = with final; [  ];
         doCheck = false;
       };
+      prime-skill-agent-message = final.buildPythonPackage {
+        pname = "prime-skill-agent-message";
+        version = "0.1.0";
+        pyproject = true;
+        src = prime.src;
+        unpackPhase = ''
+          mkdir source
+          tar -xzf $src -C source
+          sourceRoot=source/skills/agent-message
+        '';
+        build-system = [ final.hatchling ];
+        dependencies = [ final.prime-agent-runtime final.pillow ];
+        pythonImportsCheck = [ "agent_message" ];
+        doCheck = false;
+      };
+      prime-skill-attach-image = final.buildPythonPackage {
+        pname = "prime-skill-attach-image";
+        version = "0.1.0";
+        pyproject = true;
+        src = prime.src;
+        unpackPhase = ''
+          mkdir source
+          tar -xzf $src -C source
+          sourceRoot=source/skills/attach-image
+        '';
+        build-system = [ final.hatchling ];
+        dependencies = [ final.prime-agent-runtime final.pillow ];
+        pythonImportsCheck = [ "attach_image" ];
+        doCheck = false;
+      };
+      prime-skill-compact = final.buildPythonPackage {
+        pname = "prime-skill-compact";
+        version = "0.1.0";
+        pyproject = true;
+        src = prime.src;
+        unpackPhase = ''
+          mkdir source
+          tar -xzf $src -C source
+          sourceRoot=source/skills/compact
+        '';
+        build-system = [ final.hatchling ];
+        dependencies = [ final.prime-agent-runtime final.pillow ];
+        pythonImportsCheck = [ "compact" ];
+        doCheck = false;
+      };
+      prime-skill-edit = final.buildPythonPackage {
+        pname = "prime-skill-edit";
+        version = "0.1.0";
+        pyproject = true;
+        src = prime.src;
+        unpackPhase = ''
+          mkdir source
+          tar -xzf $src -C source
+          sourceRoot=source/skills/edit
+        '';
+        build-system = [ final.hatchling ];
+        dependencies = [ final.prime-agent-runtime final.pillow ];
+        pythonImportsCheck = [ "edit" ];
+        doCheck = false;
+      };
+      prime-skill-goal = final.buildPythonPackage {
+        pname = "prime-skill-goal";
+        version = "0.1.0";
+        pyproject = true;
+        src = prime.src;
+        unpackPhase = ''
+          mkdir source
+          tar -xzf $src -C source
+          sourceRoot=source/skills/goal
+        '';
+        build-system = [ final.hatchling ];
+        dependencies = [ final.prime-agent-runtime final.pillow ];
+        pythonImportsCheck = [ "goal" ];
+        doCheck = false;
+      };
+      prime-skill-refine = final.buildPythonPackage {
+        pname = "prime-skill-refine";
+        version = "0.1.0";
+        pyproject = true;
+        src = prime.src;
+        unpackPhase = ''
+          mkdir source
+          tar -xzf $src -C source
+          sourceRoot=source/skills/refine
+        '';
+        build-system = [ final.hatchling ];
+        dependencies = [ final.prime-agent-runtime final.pillow ];
+        pythonImportsCheck = [ "refine" ];
+        doCheck = false;
+      };
       prime-agent-runtime = final.buildPythonPackage {
         pname = "prime-agent-runtime";
         version = "0.1.0";
@@ -105,6 +195,8 @@ let
     };
   };
 in python.withPackages (p: with p; [
+  prime-skill-agent-message prime-skill-attach-image prime-skill-compact
+  prime-skill-edit prime-skill-goal prime-skill-refine
   prime-agent-runtime dill requests httpx pyyaml tomli python-dotenv pandas numpy
   scipy beautifulsoup4 lxml pydantic tyro
 ])
