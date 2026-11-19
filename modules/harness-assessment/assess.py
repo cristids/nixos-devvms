@@ -172,7 +172,7 @@ def _configure_basic(name, home, prompt, source):
         return [os.environ['HARNESS_PI_BIN'],'--provider','assessment','--model',MODEL,'--mode','json','-p',prompt],env
     if name=='deepagents':
         env.update(DEEPAGENTS_HOME='/home/agent/.deepagents',LANGSMITH_TRACING='false',LANGCHAIN_TRACING_V2='false')
-        return ['dcode','--model','openai:'+MODEL,'--model-params',json.dumps({'base_url':base,'max_tokens':8192}),
+        return ['dcode','--model','openai:'+MODEL,'--model-params',json.dumps({'base_url':base,'max_tokens':8192,'use_responses_api':False}),
                 '--profile-override',json.dumps({'max_input_tokens':128000,'max_output_tokens':8192}),
                 '--no-tracing','--no-mcp','--shell-allow-list','all','--max-turns','60',
                 '--timeout','840','--json','-n',prompt],env
