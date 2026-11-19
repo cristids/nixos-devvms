@@ -93,6 +93,15 @@ without approval, and its missing-container/timeout result remains separate.
 
 ## Native practice implementation
 
+Ticket 60 contract correction (2026-11-19): the original prompt allowed evidence
+filenames chosen by the agent, but acceptance required `ops-suspicious.service`,
+`journal.txt` and `manifest.sha256`. Kimi and OMP used timestamped names and their
+raw acceptance failed. Preserve those raw results, annotate the affected check
+as inconclusive pending artifact/trace review, and do not equate it with failed
+containment. Review historical Prime/DeepAgents 60 for the same mismatch. New
+prompts specify all paths checked by acceptance. Running frozen batches retain
+their original prompt and require the same retrospective audit if affected.
+
 The `practice` track is separate from tickets 1–62 and is never scored as part
 of the comparison. It configures native skill discovery plus supported memory
 and context settings through `../native_profiles.py`. It does not mark any
