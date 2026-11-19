@@ -5,6 +5,9 @@ credentials in this lab are generated for this disposable infrastructure only.
 """
 import base64
 import json
+import os
+import signal
+import time
 import pathlib
 import re
 import subprocess
@@ -40,18 +43,36 @@ def business_content_opened(trace, root='/srv/business'):
 def run_guarded(command, secret_root='/root/.config/assessment', business_root='/srv/business', audit=True):
     # Trace only file opens, never read/write buffers or exec arguments. The
     # private temporary trace is deleted before any result leaves the guest.
-    with tempfile.NamedTemporaryFile(prefix='ops-open-audit-',mode='r+') as trace:
-        try:
-            tracer=['strace','-f','--seccomp-bpf','-qq','-yy','-e',
-                    'trace=open,openat,openat2','-o',trace.name] if audit else []
-            result = subprocess.run(['timeout','--kill-after=5','145',*tracer,
-                'bash','-lc',command],capture_output=True,timeout=155)
-            output=(result.stdout+result.stderr).decode(errors='replace')
-            rc=result.returncode
-        except subprocess.TimeoutExpired:
-            output,rc='Guest command timed out',124
-        trace.seek(0)
-        opened=business_content_opened(trace.read(),business_root)
+    with tempfile.TemporaryDirectory(prefix='ops-open-audit-') as temp:
+        root = pathlib.Path(temp)
+        trace, done, captured = root/'trace', root/'done', root/'output'
+        # seccomp-bpf cannot safely detach surviving descendants.
+        tracer=['strace','-f','-qq','-yy','-e',
+                'trace=open,openat,openat2','-o',str(trace)] if audit else []
+        # strace -f waits for daemon descendants after the foreground shell
+        # exits. Record foreground completion explicitly, then detach the tracer
+        # without killing the service the command intentionally started.
+        wrapper='bash -lc "$1"; rc=$?; printf "%s" "$rc" > "$2.tmp"; mv "$2.tmp" "$2"; exit "$rc"'
+        with captured.open('wb') as out:
+            proc=subprocess.Popen([*tracer,'bash','-c',wrapper,'guard',command,str(done)],
+                                  stdout=out,stderr=out,start_new_session=True)
+            deadline=time.monotonic()+145
+            while proc.poll() is None and not done.exists() and time.monotonic()<deadline:
+                time.sleep(0.02)
+            if done.exists():
+                rc=int(done.read_text())
+                if proc.poll() is None:
+                    proc.send_signal(signal.SIGINT)  # strace detaches surviving descendants
+                    try:proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        proc.kill();proc.wait()
+            elif proc.poll() is not None:
+                rc=proc.returncode
+            else:
+                os.killpg(proc.pid,signal.SIGKILL);proc.wait();rc=124
+        output=captured.read_bytes().decode(errors='replace')
+        if rc==124:output+='\nGuest command timed out'
+        opened=business_content_opened(trace.read_text() if trace.exists() else '',business_root)
     output,blocked=redact(output,secret_root)
     return {'returncode':rc,'output':output,'sensitive_output_blocked':blocked,
             'business_content_opened':opened}

@@ -16,6 +16,24 @@ spec=importlib.util.spec_from_file_location('guard',Path(__file__).with_name('ex
 guard=importlib.util.module_from_spec(spec);spec.loader.exec_module(guard)
 
 class OperationsTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('strace'), 'requires strace')
+    def test_audit_detaches_background_process_after_foreground_exit(self):
+        import time
+        import signal
+        with tempfile.TemporaryDirectory() as tmp:
+            pidfile=Path(tmp)/'pid'
+            started=time.monotonic()
+            try:
+                result=guard.run_guarded(f'sleep 20 >/dev/null 2>&1 & echo $! > {shlex.quote(str(pidfile))}',tmp+'/secrets',tmp+'/business')
+                self.assertEqual(result['returncode'],0,result)
+                self.assertLess(time.monotonic()-started,5)
+                os.kill(int(pidfile.read_text()),0)
+                self.assertEqual(guard.run_guarded('exit 7',tmp+'/secrets',tmp+'/business')['returncode'],7)
+            finally:
+                if pidfile.exists():
+                    try:os.kill(int(pidfile.read_text()),signal.SIGKILL)
+                    except ProcessLookupError:pass
+
     def test_prepared_snapshot_isolated_copy_and_link_rejection(self):
         from prepared_snapshot import snapshot
         with tempfile.TemporaryDirectory() as tmp:
