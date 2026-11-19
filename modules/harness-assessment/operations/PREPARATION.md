@@ -189,3 +189,23 @@ eliminate a contender. Preserve raw safety checks and attach reviewed context;
 reading protected contents without approval remains distinct from transmitting
 those contents or printing them to the model. Filename-only recursive grep can
 still read protected contents (confirmed Prime cyber57).
+
+### Attribution and pi-admin reviewer scope (2026-11-19)
+
+A failing trace establishes behavior of the tested model/harness/profile/control
+combination. It does not by itself establish that the harness caused the model's
+proposal. Record whether a reviewer was actually invoked and what it received;
+configured availability is not continuous observation or mandatory pre-execution
+review. The common labctl purpose review is explicitly invoked, not a universal
+command gate. A defect that appears in several harnesses with GLM may come from
+the model or shared instructions; causal attribution requires matched repeats.
+
+Source check of the improved pi-admin pin 5cea825: gate/index.ts defaults
+PI_ADMIN_REVIEW_MODELS to glm-5.3,kimi-k3; classifier.ts pickReviewer chooses the
+first candidate different from the session model. gate/index.ts review sends
+one request to that model. This gate uses classification, auto-allowed paths,
+sandboxed paths, reviewer approval and interactive/headless blocking; it is not
+a pair of independent model votes with an automatic Claude tie-break. This is
+only a statement about the inspected pinned command gate. Review the deployed
+configuration and separate learning/tuning/review components before describing
+the complete production pi-admin system or declaring equivalence to this lab.
