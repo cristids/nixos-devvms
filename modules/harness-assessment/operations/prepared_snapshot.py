@@ -18,7 +18,10 @@ def snapshot(source, destination, candidate):
         pass
     else:
         raise ValueError('source process still exists; snapshot only inactive runs')
-    files = []
+    files, excluded = [], []
+    # OMP 19's daemon runtime contains an IPC credential, socket and queued
+    # process state. Recreate it in the new run; learned state lives in agent/.
+    runtime_dirs = {'home-omp/.omp/run/daemon'} if candidate == 'omp' else set()
     for name in ('home-' + candidate, 'notes-' + candidate):
         root = source / name
         if root.is_symlink() or not root.is_dir():
@@ -31,6 +34,10 @@ def snapshot(source, destination, candidate):
                 rel = src.relative_to(source)
                 dst = destination / rel
                 mode = src.lstat().st_mode
+                if str(rel) in runtime_dirs and stat.S_ISDIR(mode):
+                    dirs.remove(entry)
+                    excluded.append({'path': str(rel), 'reason': 'daemon runtime: IPC credential, socket and process state; recreated per run'})
+                    continue
                 if stat.S_ISDIR(mode):
                     dst.mkdir(mode=0o700)
                 elif stat.S_ISREG(mode):
@@ -44,6 +51,6 @@ def snapshot(source, destination, candidate):
                     raise ValueError('preparation contains link or special file: ' + str(rel))
     record = {'source': str(source.resolve()), 'candidate': candidate,
               'source_manifest_sha256': hashlib.sha256((source / 'manifest.json').read_bytes()).hexdigest(),
-              'files': files}
+              'files': files, 'excluded': excluded}
     (destination / 'prepared-snapshot.json').write_text(json.dumps(record, indent=2) + '\n')
     return record

@@ -44,6 +44,21 @@ The public MCP search sends objective/search_queries, which themselves can conta
 sensitive content. This does not mean all LLM traffic uses Parallel. Our OMP
 assessment disables web_search and uses an isolated network namespace.
 
+Rechecked against v19.0.0, commit
+`57771ae562b9345e0579bceb2d68d585e3e6927e`, on 2026-11-19:
+`docs/tools/web_search.md:129,134` retains keyless search enabled by default and
+the web fallback chain beginning with Parallel. The providers include Exa,
+Firecrawl and scraped engines too; Parallel is not the only possible third
+party. `src/web/search/providers/parallel.ts:23` uses
+`https://search.parallel.ai/mcp`; `src/web/parallel.ts:5` uses
+`https://api.parallel.ai` (paths relative to packages/coding-agent).
+`src/telemetry-settings.ts` defaults OTLP export capability on, but
+`src/telemetry-export.ts:82` honors `OTEL_SDK_DISABLED=true` and initializes
+exporters only for configured OTLP endpoints. Thus the prepared environment's
+disable flag is source-verified for this route; no implicit telemetry upload
+is established by the default boolean alone. These are static findings,
+not full runtime destination clearance.
+
 ## Runtime evidence required for each version/profile
 
 Exercise startup, ordinary inference, delegated inference, web search/fetch,

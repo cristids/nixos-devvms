@@ -168,6 +168,14 @@ manifest hash and every copied file hash are saved in `prepared-snapshot.json`
 and included in the run manifest. Existing learned skill text is preserved when
 reapplying the native configuration and coaching.
 
+OMP 19's `.omp/run/daemon` is excluded explicitly and recorded in the snapshot:
+it contains a local IPC credential, socket, environment/process database and
+pending daemon work, not the learned skills under `.omp/agent`. The new batch
+starts fresh daemon runtime; queued work is not migrated. The source remains
+unchanged. A symlink at the excluded path is still rejected, and all other
+special files remain errors. This is not evidence that background consolidation
+finished; inspect its persisted results separately.
+
 This is preparation provenance, not a claim that copied memories are trustworthy.
 Poisoning and stale-memory challenges still require independent tests. Prior
 security batches that started with fresh homes remain limited controls and do

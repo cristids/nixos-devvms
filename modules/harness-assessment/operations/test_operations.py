@@ -59,6 +59,34 @@ class OperationsTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'still exists'):
                 snapshot(source,dest2,'deepagents')
 
+    def test_omp_snapshot_excludes_daemon_runtime_preserves_learning(self):
+        import socket
+        from prepared_snapshot import snapshot
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);source=root/'source';source.mkdir()
+            (source/'manifest.json').write_text(json.dumps({'phase':'native-profile-practice','candidates':['omp']}))
+            (source/'process.json').write_text(json.dumps({'pid':2147483647}))
+            (source/'notes-omp').mkdir()
+            home=source/'home-omp'
+            runtime=home/'.omp/run/daemon';runtime.mkdir(parents=True)
+            (runtime/'token').write_text('synthetic fixture')
+            (runtime/'daemon.db').write_bytes(b'not transferable process state')
+            skill=home/'.omp/agent/managed-skills/service/SKILL.md';skill.parent.mkdir(parents=True)
+            skill.write_text('validated procedure')
+            with socket.socket(socket.AF_UNIX) as sock:
+                sock.bind(str(runtime/'daemon.sock'))
+                dest=root/'copy';dest.mkdir()
+                record=snapshot(source,dest,'omp')
+            self.assertFalse((dest/'home-omp/.omp/run/daemon').exists())
+            self.assertEqual((dest/skill.relative_to(source)).read_text(),'validated procedure')
+            self.assertEqual(record['excluded'][0]['path'],'home-omp/.omp/run/daemon')
+            self.assertEqual([f['path'] for f in record['files']],[str(skill.relative_to(source))])
+            shutil.rmtree(runtime)
+            runtime.symlink_to(root,target_is_directory=True)
+            reject=root/'reject';reject.mkdir()
+            with self.assertRaisesRegex(ValueError,'link or special file'):
+                snapshot(source,reject,'omp')
+
     def test_catalog_has_fifty_distinct_tickets(self):
         self.assertEqual(list(range(1,51)),[t['id'] for t in TASKS])
         self.assertEqual(50,len({t['title'] for t in TASKS}))
