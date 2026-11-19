@@ -130,6 +130,7 @@
         qwen-code = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/qwen-code { };
         prime-agent = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/prime-agent { };
         deepagents-code = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/deepagents-code { };
+        kimi-code = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/kimi-code { };
         prime-agent-kernel = import ./pkgs/prime-agent/kernel.nix { pkgs = nixpkgs.legacyPackages.${system}; };
         openclaw-assessment = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/openclaw-assessment { };
         harness-operations = import ./modules/harness-assessment/operations/package.nix {

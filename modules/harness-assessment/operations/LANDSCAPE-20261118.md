@@ -137,3 +137,31 @@ this is preparation progress, not evidence that the remaining candidates failed.
 Qwen Code0.28.0's published npm entry is `cli-entry.js` (different from the
 source package manifest). Use Node26.13.1: its CLI warns of excessive transient
 shell-safety memory usage on Node24 and recommends at least26.12.1.
+
+### Kimi lineage verification — 2026-11-19
+
+The legacy [MoonshotAI/kimi-cli 1.52.0](https://github.com/MoonshotAI/kimi-cli/releases/tag/1.52.0)
+is archived, including its Python packages. It explicitly directs users to
+[MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). Do not package the
+legacy Python alias as the current contender.
+
+The current stable successor is **Kimi Code CLI 2.6.3**, Git release
+`@moonshot-ai/kimi-code@2.6.3`, published 2026-11-17. Version-pinned provider docs
+support OpenAI Chat Completions (`type = "openai"`), Responses separately, and
+native Anthropic Messages. The provider needs an explicit `api_key_env` binding;
+implicit shell credential fallback is not supported. An isolated Melious broker
+profile can use the dummy environment key, with no real key in the candidate.
+
+Configuration lives under `KIMI_CODE_HOME`; user skills and agent definitions
+can be stored there. Telemetry must be explicitly disabled in config. CLI
+`--prompt` supports `--output-format stream-json` and selects automatic permission
+mode; it cannot be combined with `--auto` or `--yolo`. The external assessment
+sandbox remains the host boundary. The CLI also exposes an ACP server, relevant
+to Paseo integration, but no Paseo integration result is established yet.
+
+Nix package `kimi-code` now builds the pinned official Linux x64 release. Keep
+`dontStrip = true`: stripping damaged the embedded executable payload and caused
+SIGILL even for `--version`; preserving it passed local version/help checks.
+This is packaging readiness only: broker configuration, native memory, explicit
+child model, security and actual administration trials remain pending. Kimi Code
+is retained for practical evaluation, not eliminated because the old CLI retired.
