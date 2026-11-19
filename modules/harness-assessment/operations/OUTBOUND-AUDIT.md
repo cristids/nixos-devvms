@@ -34,7 +34,7 @@ individual implementations may ignore them.
 | Qwen Code | Custom broker providers, telemetry off | Auto-memory/auto-dream/auto-skill provider inheritance, search/fetch, updates and fallback |
 | Prime Agent | Explicit broker provider, offline, Nix kernel | Bundled skills/refine, subprocesses, memory/subagent routes, default cloud integrations |
 | Deep Agents Code | Explicit broker Chat Completions, LangSmith tracing off, MCP disabled | LangGraph child environment, tool services, telemetry and fallback routes |
-| Kimi Code | Package only; no assessment adapter yet | Full provider/telemetry/search/memory/subagent audit before qualification |
+| Kimi Code | Broker provider configured, telemetry off; static doctor passed | Full provider/telemetry/search/memory/subagent audit before qualification |
 | Other landscape candidates | Not yet prepared | Same audit required if selected; absence of adapter is not a pass or failure |
 
 OMP upstream evidence, pinned v18.22.2:
@@ -78,3 +78,9 @@ prepared profiles; do not import scored GLM solutions into the DSF round.
 Confirm the exact DSF model identifier against the available catalog before
 launch. Report outcomes, spend and latency separately. No comparative winner is
 established by the current preparation coverage.
+
+Latest user steering (2026-11-19) supersedes automatic DSF continuation: finish
+the GLM round, then analyze it against the complete existing pi-admin system
+before starting DSF. The original objective is whether alternatives outperform
+that implementation, not whether their isolated components look promising.
+Do not claim the simplified laboratory review arrangement supersedes pi-admin.

@@ -39,7 +39,7 @@ Only observed checks justify success. Failed attempts and supervisor assistance 
 SKILL_DIRS = {
     'pi-admin': '.pi/agent/skills', 'pi-admin-before': '.pi/agent/skills',
     'hermes': '.hermes/skills', 'opencode': '.config/opencode/skills',
-    'deepagents': '.deepagents/agent/skills', 'prime': '.prime/agent/skills', 'qwen': '.qwen/skills', 'openclaw': '.openclaw/skills', 'letta': '.agents/skills', 'omp': '.agents/skills', 'vibe': '.vibe/skills', 'goose': '.agents/skills', 'dsh': '.dsh/skills',
+    'kimi': '.kimi-code/skills', 'deepagents': '.deepagents/agent/skills', 'prime': '.prime/agent/skills', 'qwen': '.qwen/skills', 'openclaw': '.openclaw/skills', 'letta': '.agents/skills', 'omp': '.agents/skills', 'vibe': '.vibe/skills', 'goose': '.agents/skills', 'dsh': '.dsh/skills',
 }
 
 

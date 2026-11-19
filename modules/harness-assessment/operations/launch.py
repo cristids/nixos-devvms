@@ -10,7 +10,7 @@ import tempfile
 
 p=argparse.ArgumentParser()
 p.add_argument('--root',type=Path,required=True)
-p.add_argument('--candidates',nargs='+',default=['pi-admin'],choices=['pi-admin-before','pi-admin','hermes','opencode','vibe','goose','dsh','omp','letta','openclaw','qwen','prime','deepagents'])
+p.add_argument('--candidates',nargs='+',default=['pi-admin'],choices=['pi-admin-before','pi-admin','hermes','opencode','vibe','goose','dsh','omp','letta','openclaw','qwen','prime','deepagents','kimi'])
 p.add_argument('--tasks')
 p.add_argument('--prepared-from',type=Path,help='inactive practice run whose home and notes are copied into this isolated run')
 p.add_argument('--track',choices=['operations','cyber','practice'],default='operations')
