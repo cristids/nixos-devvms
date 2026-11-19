@@ -30,10 +30,15 @@ in stdenv.mkDerivation {
     mkdir -p $out/lib/python $out/bin
     python -m pip install --no-cache-dir --disable-pip-version-check \
       --no-index --no-deps --no-compile --target $out/lib/python ${wheels}/*.whl
+    # Child servers sanitize PYTHONPATH and re-exec sys.executable. A Nix-owned
+    # venv makes package discovery intrinsic to that interpreter as well.
+    python -m venv --without-pip $out/venv
+    rmdir $out/venv/lib/python3.14/site-packages
+    ln -s $out/lib/python $out/venv/lib/python3.14/site-packages
     for name in dcode deepagents-code; do
       entry=$out/lib/python/bin/$name
-      makeWrapper ${python3}/bin/python $out/bin/$name \
-        --add-flags "$entry" --prefix PYTHONPATH : $out/lib/python \
+      makeWrapper $out/venv/bin/python $out/bin/$name \
+        --add-flags "$entry" \
         --set DO_NOT_TRACK 1 --set LANGSMITH_TRACING false
     done
   '';
