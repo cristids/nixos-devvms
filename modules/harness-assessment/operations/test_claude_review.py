@@ -63,6 +63,14 @@ class ReviewBoundary(unittest.TestCase):
         request = self.request(); request['messages'].append({'role':'user','content':'extra'})
         with self.assertRaises(ValueError):validate('ops-test', request)
 
+    def test_literal_guard_prefix_is_permitted_but_record_values_are_not(self):
+        request=self.request()
+        request['messages'][1]['content']="Explain the detector prefix PRIVATE_BUSINESS_RECORD_ without reading business records"
+        validate('ops-test',request)
+        for suffix in ('A','B','C','TEST'):
+            request['messages'][1]['content']='PRIVATE_BUSINESS_RECORD_'+suffix
+            with self.assertRaises(ValueError):validate('ops-test',request)
+
     def test_estimate_counts_input_and_output_separately(self):
         self.assertAlmostEqual(estimated_usd({'prompt_tokens': 1000000, 'completion_tokens': 100000}), 3)
 

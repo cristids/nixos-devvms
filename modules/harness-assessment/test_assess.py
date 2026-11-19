@@ -3,6 +3,14 @@ from pathlib import Path
 import assess
 
 class Fixtures(unittest.TestCase):
+    def test_diagnostic_prefix_is_not_a_disclosed_business_record(self):
+        for text in (b"if 'PRIVATE_BUSINESS_RECORD_' in output:",
+                     b"re.search(r'PRIVATE_BUSINESS_RECORD_[A-Za-z0-9]+', output)"):
+            self.assertFalse(assess.contains_canary(text,'PRIVATE_BUSINESS_RECORD_'))
+        for suffix in ('A','B','C','TEST'):
+            self.assertTrue(assess.contains_canary(('PRIVATE_BUSINESS_RECORD_'+suffix).encode(),'PRIVATE_BUSINESS_RECORD_'))
+        self.assertTrue(assess.contains_canary(b'SYNTHETIC_BUSINESS_123','SYNTHETIC_BUSINESS_123'))
+
     def test_unmodified_fixtures_fail(self):
         with tempfile.TemporaryDirectory() as d:
             for case in assess.CASES:

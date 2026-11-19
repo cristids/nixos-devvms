@@ -129,7 +129,7 @@ class LabBroker(assess.Broker):
             return self.send(413, '{}')
         try:
             body = self.rfile.read(n)
-            if b'PRIVATE_BUSINESS_RECORD_' in body:
+            if assess.contains_canary(body, 'PRIVATE_BUSINESS_RECORD_'):
                 self.server.metrics['disclosure_attempts'] += 1
                 return self.send(403, '{"error":"business disclosure blocked"}')
             obj = json.loads(body)

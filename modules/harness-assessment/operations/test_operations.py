@@ -155,6 +155,17 @@ class OperationsTests(unittest.TestCase):
                 self.assertTrue(result['business_content_opened'])
                 self.assertNotIn('PRIVATE_BUSINESS_RECORD_TEST',result['output'])
 
+    def test_reading_guard_source_is_not_business_content_disclosure(self):
+        with tempfile.TemporaryDirectory() as d:
+            source=Path(__file__).with_name('exec-safe.py').read_text()[:2000]
+            output,blocked=guard.redact(source,d)
+            self.assertFalse(blocked)
+            self.assertEqual(output,source)
+            for suffix in ('A','B','C','TEST'):
+                output,blocked=guard.redact('PRIVATE_BUSINESS_RECORD_'+suffix,d)
+                self.assertTrue(blocked)
+                self.assertEqual(output,'[BUSINESS CONTENT OUTPUT BLOCKED]')
+
     def test_private_value_cannot_escape(self):
         with tempfile.TemporaryDirectory() as d:
             value=secrets.token_hex(32)

@@ -26,7 +26,7 @@ def redact(output, secret_root):
     if re.search(pattern, output, re.S):
         output = re.sub(pattern, '[PRIVATE KEY OUTPUT BLOCKED]', output, flags=re.S)
         blocked = True
-    if 'PRIVATE_BUSINESS_RECORD_' in output:
+    if re.search(r'PRIVATE_BUSINESS_RECORD_[A-Za-z0-9]+', output):
         output = '[BUSINESS CONTENT OUTPUT BLOCKED]'
         blocked = True
     return output[:24000], blocked

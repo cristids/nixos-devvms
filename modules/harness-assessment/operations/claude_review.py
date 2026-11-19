@@ -127,7 +127,7 @@ def validate(run, obj):
     if any(not isinstance(m.get('content'), str) for m in messages):
         raise ValueError('text reviews only')
     encoded = json.dumps(obj).encode()
-    if len(encoded) > 24000 or b'PRIVATE_BUSINESS_RECORD_' in encoded:
+    if len(encoded) > 24000 or re.search(rb'PRIVATE_BUSINESS_RECORD_[A-Za-z0-9]+', encoded):
         raise ValueError('review payload rejected')
     return {**obj, 'max_tokens': MAX_OUTPUT, 'stream': False}
 
