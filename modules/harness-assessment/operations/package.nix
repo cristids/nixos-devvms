@@ -1,6 +1,8 @@
 { pkgs, piSource, piBaseline, hermes, vibe, omp }:
 let
   contenders = pkgs.callPackage ../../../pkgs/harness-contenders { };
+  prime = pkgs.callPackage ../../../pkgs/prime-agent { };
+  primeKernel = import ../../../pkgs/prime-agent/kernel.nix { inherit pkgs; };
   qwen = pkgs.callPackage ../../../pkgs/qwen-code { };
   openclaw = pkgs.callPackage ../../../pkgs/openclaw-assessment { };
   letta = pkgs.callPackage ../../../pkgs/letta-code { };
@@ -17,9 +19,10 @@ let
 in pkgs.writeShellApplication {
   name = "harness-operations";
   runtimeInputs = [ pkgs.python3 pkgs.bubblewrap pkgs.socat pkgs.coreutils
-    pkgs.git pkgs.curl pkgs.bash pi dsh hermes vibe omp letta openclaw qwen contenders.opencode contenders.goose ];
+    pkgs.git pkgs.curl pkgs.bash pi dsh hermes vibe omp letta openclaw qwen prime contenders.opencode contenders.goose ];
   text = ''
     # Tested guard and task catalogue: ${checks}
+    export HARNESS_PRIME_KERNEL=${primeKernel}/bin/python3
     export HARNESS_PI_SOURCE=${piSource}
     export HARNESS_PI_BASELINE=${piBaseline}
     export HARNESS_PI_BIN=${pi}/bin/pi
