@@ -39,7 +39,7 @@ Only observed checks justify success. Failed attempts and supervisor assistance 
 SKILL_DIRS = {
     'pi-admin': '.pi/agent/skills', 'pi-admin-before': '.pi/agent/skills',
     'hermes': '.hermes/skills', 'opencode': '.config/opencode/skills',
-    'prime': '.prime/agent/skills', 'qwen': '.qwen/skills', 'openclaw': '.openclaw/skills', 'letta': '.agents/skills', 'omp': '.agents/skills', 'vibe': '.vibe/skills', 'goose': '.agents/skills', 'dsh': '.dsh/skills',
+    'deepagents': '.deepagents/agent/skills', 'prime': '.prime/agent/skills', 'qwen': '.qwen/skills', 'openclaw': '.openclaw/skills', 'letta': '.agents/skills', 'omp': '.agents/skills', 'vibe': '.vibe/skills', 'goose': '.agents/skills', 'dsh': '.dsh/skills',
 }
 
 
@@ -48,6 +48,9 @@ def prepare(name, home, command, env):
     skill=home/SKILL_DIRS[name]/'assessment-operations/SKILL.md'
     skill.parent.mkdir(parents=True,exist_ok=True)
     skill.write_text(SKILL)
+    if name=='prime':
+        command=list(command)
+        command[-1]+='\nPRIME PRINT-MODE PREPARATION: This one-shot CLI exits after your final response. Explicitly await all asynchronous command/verification handles and save every requested artifact before finalizing; ending with a promise to wait for a future notification cannot complete the task. Use durable cross-session harness memory for procedures meant to survive new sessions; session-local state alone is not cross-session learning.'
     if name=='hermes':
         path=home/'.hermes/config.yaml'
         cfg=json.loads(path.read_text())
